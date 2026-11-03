@@ -1,1 +1,5 @@
 __pycache__/
+gm_passcode.txt
+# purchased token art: used locally by the battlemap, never committed
+Tokens/
+tokens/

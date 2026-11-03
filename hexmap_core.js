@@ -20,6 +20,7 @@ const ZONES = {
 // the border between two neighbouring hexes (S.edges)
 const EFFECTS = {
   difficult: { col:'214,160,90', label:'Difficult terrain' },
+  dangerous: { col:'236,84,60',  label:'Dangerous terrain' },
   climb:     { col:'170,180,192', label:'Climb' },
 };
 
@@ -628,6 +629,7 @@ function drawMapLayers(ctx, lw) {
   }
 
   drawDifficult(ctx);
+  drawDangerous(ctx);
   drawZones(ctx);
 
   if (S.showGrid) {
@@ -662,6 +664,28 @@ function drawDifficult(ctx) {
   ctx.strokeStyle = `rgba(${col},0.38)`; ctx.lineWidth = HEX*0.045; ctx.stroke();
   ctx.restore();
   ctx.setLineDash([HEX*0.16, HEX*0.1]); strokeEdges(ctx, outerEdges(cells, HEX), HEX*0.05, `rgba(${col},0.85)`); ctx.setLineDash([]);
+}
+// Dangerous terrain: a red tint with a hazard triangle in every hex
+function drawDangerous(ctx) {
+  const cells = [], col = EFFECTS.dangerous.col;
+  for (const k in S.effects) {
+    if (S.effects[k] !== 'dangerous') continue;
+    const [c, r] = k.split(',').map(Number), a = offToAx(c, r), p = axToPx(a.q, a.r);
+    cells.push({ q: a.q, r: a.r, x: p.x, y: p.y });
+  }
+  if (!cells.length) return;
+  footprintPath(ctx, cells, HEX); ctx.fillStyle = `rgba(${col},0.18)`; ctx.fill();
+  ctx.setLineDash([HEX*0.16, HEX*0.1]); strokeEdges(ctx, outerEdges(cells, HEX), HEX*0.05, `rgba(${col},0.9)`); ctx.setLineDash([]);
+  const tri = new Path2D(), bang = new Path2D(), s = HEX*0.3;
+  cells.forEach(c => {
+    tri.moveTo(c.x, c.y - s); tri.lineTo(c.x + s*0.95, c.y + s*0.65); tri.lineTo(c.x - s*0.95, c.y + s*0.65); tri.closePath();
+    bang.moveTo(c.x, c.y - s*0.45); bang.lineTo(c.x, c.y + s*0.12); bang.moveTo(c.x, c.y + s*0.36); bang.lineTo(c.x, c.y + s*0.38);
+  });
+  ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.fillStyle = `rgba(${col},0.28)`; ctx.fill(tri);
+  ctx.strokeStyle = `rgba(${col},0.85)`; ctx.lineWidth = HEX*0.05; ctx.stroke(tri);
+  ctx.lineWidth = HEX*0.07; ctx.stroke(bang);
+  ctx.restore();
 }
 // A climb: a muted, see-through line along the border with ladder rungs across it
 function drawClimb(ctx, A, B) {
@@ -789,7 +813,7 @@ function normalizeMap(d) {
     showGrid: d.showGrid !== false, gridOpacity: typeof d.gridOpacity === 'number' ? d.gridOpacity : 0.45,
     cells: d.cells && typeof d.cells === 'object' ? d.cells : {},
     zones: d.zones && typeof d.zones === 'object' ? Object.fromEntries(Object.entries(d.zones).filter(([, v]) => ZONES[v])) : {},
-    effects: d.effects && typeof d.effects === 'object' ? Object.fromEntries(Object.entries(d.effects).filter(([, v]) => v === 'difficult')) : {},
+    effects: d.effects && typeof d.effects === 'object' ? Object.fromEntries(Object.entries(d.effects).filter(([, v]) => v === 'difficult' || v === 'dangerous')) : {},
     edges: d.edges && typeof d.edges === 'object' ? Object.fromEntries(Object.entries(d.edges).filter(([k, v]) => v === 'climb' && k.includes('|'))) : {},
     objects: Array.isArray(d.objects) ? d.objects.filter(o => o && TEMPLATES[o.type]) : [],
     nextId: d.nextId || (Array.isArray(d.objects) ? d.objects.length + 1 : 1),

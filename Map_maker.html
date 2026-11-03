@@ -76,6 +76,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
   clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
 .sw.zone{background:repeating-linear-gradient(45deg,rgba(var(--zc),.9) 0 3px,rgba(var(--zc),.3) 3px 6px)}
 .sw.diff{background:repeating-linear-gradient(45deg,rgba(214,160,90,.85) 0 2px,transparent 2px 5px),repeating-linear-gradient(-45deg,rgba(214,160,90,.85) 0 2px,rgba(214,160,90,.2) 2px 5px)}
+.sw.danger{background:rgba(236,84,60,.55);border-color:rgba(236,84,60,.95)}
 .climbic{width:16px;text-align:center;color:#aab4c0;font-weight:700}
 .sw.erase{background:repeating-linear-gradient(45deg,#ff6b3d 0 3px,transparent 3px 6px)}
 .seg{display:flex;gap:4px;margin-top:8px;align-items:center}
@@ -182,6 +183,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
       <div class="tools">
         <button class="btn tool" data-tool="difficult" title="Costs double movement to enter"><span class="sw diff"></span>Difficult terrain<kbd>7</kbd></button>
         <button class="btn tool" data-tool="climb" title="Click or drag along the border between two hexes. Crossing it costs double movement"><span class="climbic">╪</span>Climb (hex border)<kbd>8</kbd></button>
+        <button class="btn tool" data-tool="dangerous" title="Entering it means an Engineering check or 5 damage; costs no extra movement"><span class="sw danger"></span>Dangerous terrain<kbd>9</kbd></button>
       </div>
       <div class="seg" id="brushSeg">
         <span>Brush</span>
@@ -233,7 +235,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
     <span id="stHex">Hex —</span>
     <span id="stCounts"></span>
     <span class="grow"></span>
-    <span>5/6: zones · 7/8: effects · Right-click: remove · Wheel: zoom · Space/middle-drag: pan · R: rotate · Esc: deselect</span>
+    <span>5/6: zones · 7–9: effects · Right-click: remove · Wheel: zoom · Space/middle-drag: pan · R: rotate · Esc: deselect</span>
     <span id="stSave"></span>
   </footer>
 </div>
@@ -277,7 +279,7 @@ function drawMap(ctx, opt) {
     const p = new Path2D();
     brushCells(h, ui.brush).forEach(c => { if (inB(c.q, c.r)) { const x = axToPx(c.q, c.r); hexSub(p, x.x, x.y, HEX); } });
     const Z = ZONES[ui.tool];
-    const col = Z ? `rgba(${Z.col},0.3)` : { light:'rgba(70,185,85,0.3)', hard:'rgba(30,33,38,0.45)', erase:'rgba(255,107,61,0.18)', difficult:'rgba(214,160,90,0.3)' }[ui.tool];
+    const col = Z ? `rgba(${Z.col},0.3)` : { light:'rgba(70,185,85,0.3)', hard:'rgba(30,33,38,0.45)', erase:'rgba(255,107,61,0.18)', difficult:'rgba(214,160,90,0.3)', dangerous:'rgba(236,84,60,0.3)' }[ui.tool];
     ctx.fillStyle = col; ctx.fill(p);
     ctx.strokeStyle = Z ? `rgb(${Z.col})` : ui.tool === 'erase' ? '#ff6b3d' : '#4fd1ff'; ctx.lineWidth = opt.lw * 2; ctx.stroke(p);
   }
@@ -328,7 +330,7 @@ function changed() { requestRender(); scheduleSave(); updateCounts(); }
 function updateCounts() {
   let l = 0, h = 0; for (const k in S.cells) S.cells[k] === 'light' ? l++ : h++;
   let dz = 0, ez = 0; for (const k in S.zones) S.zones[k] === 'deploy' ? dz++ : ez++;
-  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Deploy: ${dz} · Extract: ${ez} · Difficult: ${Object.keys(S.effects).length} · Climbs: ${Object.keys(S.edges).length} · Templates: ${S.objects.length}`;
+  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Deploy: ${dz} · Extract: ${ez} · Difficult: ${Object.values(S.effects).filter(v => v === 'difficult').length} · Dangerous: ${Object.values(S.effects).filter(v => v === 'dangerous').length} · Climbs: ${Object.keys(S.edges).length} · Templates: ${S.objects.length}`;
 }
 function paintAt(h) {
   const k = h.q + ',' + h.r; if (k === ui.lastPaintKey) return; ui.lastPaintKey = k;
@@ -338,7 +340,7 @@ function paintAt(h) {
       delete S.cells[key]; delete S.zones[key]; delete S.effects[key];
       DIRS.forEach(([dq, dr]) => delete S.edges[edgeKey(c, { q: c.q + dq, r: c.r + dr })]);
     }
-    else if (ui.paintMode === 'difficult') S.effects[key] = 'difficult';
+    else if (ui.paintMode === 'difficult' || ui.paintMode === 'dangerous') S.effects[key] = ui.paintMode;
     else if (ZONES[ui.paintMode]) S.zones[key] = ui.paintMode;
     else S.cells[key] = ui.paintMode;
   });
@@ -462,7 +464,7 @@ window.addEventListener('keydown', e => {
   if (k === ' ') { e.preventDefault(); if (!ui.space) { ui.space = true; updateCursor(); } return; }
   if (k === '1') setTool('light'); else if (k === '2') setTool('hard'); else if (k === '3') setTool('erase'); else if (k === '4') setTool('pan');
   else if (k === '5') setTool('deploy'); else if (k === '6') setTool('extract');
-  else if (k === '7') setTool('difficult'); else if (k === '8') setTool('climb');
+  else if (k === '7') setTool('difficult'); else if (k === '8') setTool('climb'); else if (k === '9') setTool('dangerous');
   else if (k === 'r') rotate(e.shiftKey ? -1 : 1);
   else if (k === 'f') fitView();
   else if (k === 'escape') setTool('light');
