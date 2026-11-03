@@ -90,6 +90,8 @@ input[type=checkbox]{accent-color:var(--accent2)}
 .rotrow{display:flex;align-items:center;gap:6px;margin-top:10px}
 #rotLabel{min-width:48px;text-align:center;font-family:Consolas,monospace}
 .btnrow{display:flex;gap:6px;margin-top:8px}.btnrow>*{flex:1}
+.hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45}
+#shapeSeg button{min-width:0;padding-left:2px;padding-right:2px}
 #stage{grid-area:stage;position:relative;overflow:hidden;
   background:#0a0d11 repeating-linear-gradient(0deg,transparent 0 39px,#10151b 39px 40px),
              repeating-linear-gradient(90deg,transparent 0 39px,#10151b 39px 40px)}
@@ -184,6 +186,18 @@ input[type=checkbox]{accent-color:var(--accent2)}
         <button class="btn tool" data-tool="difficult" title="Costs double movement to enter"><span class="sw diff"></span>Difficult terrain<kbd>7</kbd></button>
         <button class="btn tool" data-tool="climb" title="Click or drag along the border between two hexes. Crossing it costs double movement"><span class="climbic">╪</span>Climb (hex border)<kbd>8</kbd></button>
         <button class="btn tool" data-tool="dangerous" title="Entering it means an Engineering check or 5 damage; costs no extra movement"><span class="sw danger"></span>Dangerous terrain<kbd>9</kbd></button>
+        <button class="btn tool" data-tool="line" title="Draw a cliff edge or wall: every hex border it runs through becomes a climb"><span class="climbic">⟋</span>Climb line (cliff, wall)<kbd>L</kbd></button>
+      </div>
+      <div id="lineOpts" hidden>
+        <div class="seg" id="shapeSeg">
+          <span>Shape</span>
+          <button class="btn small" data-s="line" title="Click point by point, or drag a single straight line">Line</button>
+          <button class="btn small" data-s="free" title="Drag to draw">Free</button>
+          <button class="btn small" data-s="rect" title="Drag from corner to corner">Box</button>
+          <button class="btn small" data-s="circle" title="Drag from the middle outwards">Circle</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="snapCorners"> Snap to hex corners <kbd>Shift</kbd></label>
+        <div class="hint" id="lineHint"></div>
       </div>
       <div class="seg" id="brushSeg">
         <span>Brush</span>
@@ -251,7 +265,8 @@ let S = null;            // the current map (everything here gets saved)
 let bgImg = null;        // decoded background image
 const view = { scale: 1, ox: 0, oy: 0 };
 const ui = { tool:'light', brush:0, template:null, rot:0, autoCover:true, autoClimb:true, hover:null, hoverEdge:null,
-             painting:false, paintMode:null, lastPaintKey:null, panning:false, last:null, space:false };
+             painting:false, paintMode:null, lastPaintKey:null, panning:false, last:null, space:false,
+             shape:'line', snapCorners:false, draft:null, cursor:null, hoverLine:-1 };
 let undoStack = [], redoStack = [];
 
 /* =========================================================================
@@ -259,8 +274,9 @@ let undoStack = [], redoStack = [];
    ========================================================================= */
 function drawMap(ctx, opt) {
   drawMapLayers(ctx, opt.lw);
+  if (opt.live) drawLines(ctx, opt.lw);
 
-  if (!opt.live || !ui.hover || ui.panning) return;
+  if (!opt.live || !ui.hover || ui.panning || ui.tool === 'line') return;
   const h = ui.hover;
   if (ui.tool === 'template' && ui.template) {
     const cells = footprint(ui.template, h.q, h.r, ui.rot), ok = cells.every(c => inB(c.q, c.r));
@@ -284,6 +300,35 @@ function drawMap(ctx, opt) {
     ctx.fillStyle = col; ctx.fill(p);
     ctx.strokeStyle = Z ? `rgb(${Z.col})` : ui.tool === 'erase' ? '#ff6b3d' : '#4fd1ff'; ctx.lineWidth = opt.lw * 2; ctx.stroke(p);
   }
+}
+
+// Every line as a dashed guide with dots at its ends (where new lines snap on), and the line being drawn
+function drawLines(ctx, lw) {
+  const on = ui.tool === 'line', stroke = (pts, closed) => {
+    ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); if (closed) ctx.closePath();
+  };
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  S.lines.forEach((l, i) => {
+    const col = i === ui.hoverLine && on && !ui.draft ? '255,107,61' : LINE_KINDS[l.kind].col;
+    stroke(l.pts, l.closed); ctx.setLineDash([lw*7, lw*5]);
+    ctx.strokeStyle = `rgba(${col},${on ? 0.95 : 0.45})`; ctx.lineWidth = lw * (on ? 2.5 : 1.5); ctx.stroke(); ctx.setLineDash([]);
+    if (on && !l.closed) for (const p of [l.pts[0], l.pts[l.pts.length - 1]]) {
+      ctx.beginPath(); ctx.arc(p.x, p.y, lw*4, 0, TAU); ctx.fillStyle = `rgb(${col})`; ctx.fill();
+    }
+  });
+  const d = draftShape();
+  if (d) {
+    ctx.save(); ctx.globalAlpha = 0.6;
+    for (const k of lineEdges(d.pts, d.closed)) { const e = edgeEnds(k); if (e) drawClimb(ctx, e[0], e[1]); }
+    ctx.restore();
+    stroke(d.pts, d.closed); ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = lw * 2.5; ctx.stroke();
+  }
+  const c = on && ui.cursor;
+  if (c && c.snap) {   // a ring shows where the point will snap to
+    ctx.beginPath(); ctx.arc(c.x, c.y, lw*9, 0, TAU);
+    ctx.strokeStyle = c.snap === 'corner' ? '#4fd1ff' : '#ff6b3d'; ctx.lineWidth = lw * 2.5; ctx.stroke();
+  }
+  ctx.restore();
 }
 
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
@@ -320,9 +365,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && S &
 /* =========================================================================
    EDITING ACTIONS
    ========================================================================= */
-const snap = () => JSON.stringify({ cells: S.cells, zones: S.zones, effects: S.effects, edges: S.edges, objects: S.objects, nextId: S.nextId });
+const snap = () => JSON.stringify({ cells: S.cells, zones: S.zones, effects: S.effects, edges: S.edges, objects: S.objects, lines: S.lines, nextId: S.nextId });
 function pushUndo() { undoStack.push(snap()); if (undoStack.length > 200) undoStack.shift(); redoStack = []; updateUndoBtns(); }
-function restoreSnap(j) { const d = JSON.parse(j); S.cells = d.cells; S.zones = d.zones || {}; S.effects = d.effects || {}; S.edges = d.edges || {}; S.objects = d.objects; S.nextId = d.nextId; changed(); }
+function restoreSnap(j) { const d = JSON.parse(j); S.cells = d.cells; S.zones = d.zones || {}; S.effects = d.effects || {}; S.edges = d.edges || {}; S.objects = d.objects; S.lines = d.lines || []; S.nextId = d.nextId; changed(); }
 function undo() { if (!undoStack.length) return; redoStack.push(snap()); restoreSnap(undoStack.pop()); updateUndoBtns(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snap()); restoreSnap(redoStack.pop()); updateUndoBtns(); }
 function updateUndoBtns() { $('btnUndo').disabled = !undoStack.length; $('btnRedo').disabled = !redoStack.length; }
@@ -331,7 +376,7 @@ function changed() { requestRender(); scheduleSave(); updateCounts(); }
 function updateCounts() {
   let l = 0, h = 0; for (const k in S.cells) S.cells[k] === 'light' ? l++ : h++;
   let dz = 0, ez = 0; for (const k in S.zones) S.zones[k] === 'deploy' ? dz++ : ez++;
-  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Deploy: ${dz} · Extract: ${ez} · Difficult: ${Object.values(S.effects).filter(v => v === 'difficult').length} · Dangerous: ${Object.values(S.effects).filter(v => v === 'dangerous').length} · Climbs: ${Object.keys(S.edges).length} · Templates: ${S.objects.length}`;
+  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Deploy: ${dz} · Extract: ${ez} · Difficult: ${Object.values(S.effects).filter(v => v === 'difficult').length} · Dangerous: ${Object.values(S.effects).filter(v => v === 'dangerous').length} · Climbs: ${Object.keys(S.edges).length} · Lines: ${S.lines.length} · Templates: ${S.objects.length}`;
 }
 function paintAt(h) {
   const k = h.q + ',' + h.r; if (k === ui.lastPaintKey) return; ui.lastPaintKey = k;
@@ -368,11 +413,13 @@ function removeObject(i) {
   const o = S.objects[i];
   if (o.cover) footprint(o.type, o.q, o.r, o.rot).forEach(c => { const k = keyOf(c.q, c.r); if (S.cells[k] === o.cover) delete S.cells[k]; });
   S.objects.splice(i, 1);
-  // take away this building's wall climbs, except where another building still has a wall
-  if (o.climbs && o.climbs.length) {
-    const kept = new Set(S.objects.flatMap(x => x.climbs || []));
-    o.climbs.forEach(k => { if (!kept.has(k)) delete S.edges[k]; });
-  }
+  dropClimbs(o);
+}
+// Take away the climbs a building or line made, except where another building or line still has one
+function dropClimbs(o) {
+  if (!o.climbs || !o.climbs.length) return;
+  const kept = ownedClimbs();
+  o.climbs.forEach(k => { if (!kept.has(k)) delete S.edges[k]; });
 }
 function placeTemplate(h) {
   const T = TEMPLATES[ui.template], cells = footprint(ui.template, h.q, h.r, ui.rot);
@@ -380,17 +427,88 @@ function placeTemplate(h) {
   pushUndo();
   const o = { id: S.nextId++, type: ui.template, q: h.q, r: h.r, rot: ui.rot, cover: null };
   if (ui.autoCover && T.cover) { o.cover = T.cover; cells.forEach(c => S.cells[keyOf(c.q, c.r)] = T.cover); }
-  // a building records its wall climbs, including ones shared with another building's wall, but never
+  // a building records its wall climbs, including ones shared with another building or line, but never
   // hand-drawn ones, so removing it leaves those alone
-  if (ui.autoClimb && T.roof) {
-    const owned = new Set(S.objects.flatMap(x => x.climbs || []));
-    o.climbs = outlineEdges(cells).filter(k => !S.edges[k] || owned.has(k));
-    o.climbs.forEach(k => S.edges[k] = 'climb');
-  }
+  if (ui.autoClimb && T.roof) o.climbs = addClimbs(outlineEdges(cells));
   S.objects.push(o); changed();
 }
+function addClimbs(keys) {
+  const owned = ownedClimbs(), mine = keys.filter(k => !S.edges[k] || owned.has(k));
+  mine.forEach(k => S.edges[k] = 'climb');
+  return mine;
+}
+
+/* ---- Lines: cliffs and walls drawn freely; every border they run through becomes a climb ---- */
+const snapDist = () => Math.max(HEX*0.3, 14 / view.scale);
+// Where a point goes: onto the end of another line (or this line's start, to close it), else a hex corner if asked
+function snapPoint(w, corners) {
+  const p = { x: Math.min(gridW(), Math.max(0, w.x)), y: Math.min(gridH(), Math.max(0, w.y)), snap: null };
+  let best = snapDist(), at = null, kind = null;
+  const near = (q, k) => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d <= best) { best = d; at = q; kind = k; } };
+  for (const l of S.lines) if (!l.closed) { near(l.pts[0], 'end'); near(l.pts[l.pts.length - 1], 'end'); }
+  if (ui.draft && ui.shape === 'line' && ui.draft.pts.length >= 2) near(ui.draft.pts[0], 'start');
+  if (at) return { x: at.x, y: at.y, snap: kind };
+  if (corners) {
+    const h = pxToAx(p.x, p.y), c = axToPx(h.q, h.r);
+    let bc = null, bd = Infinity;
+    for (let i = 0; i < 6; i++) { const [x, y] = hexCorner(c.x, c.y, HEX, i), d = Math.hypot(x - p.x, y - p.y); if (d < bd) { bd = d; bc = { x, y }; } }
+    return { x: bc.x, y: bc.y, snap: 'corner' };
+  }
+  return p;
+}
+// The points of a box or circle dragged from a to b
+function shapePoints(shape, a, b) {
+  if (shape === 'rect') return [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }];
+  const R = Math.hypot(b.x - a.x, b.y - a.y), n = Math.max(12, Math.min(48, Math.round(R / (HEX*0.4))));
+  return Array.from({ length: n }, (_, i) => ({ x: a.x + R*Math.cos(TAU*i/n), y: a.y + R*Math.sin(TAU*i/n) }));
+}
+// The line being drawn, as it would be added right now
+function draftShape() {
+  const d = ui.draft; if (!d) return null;
+  if (d.shape === 'rect' || d.shape === 'circle') return d.end ? { pts: shapePoints(d.shape, d.pts[0], d.end), closed: true } : null;
+  const pts = d.shape === 'line' && ui.cursor ? d.pts.concat(ui.cursor) : d.pts;
+  return pts.length >= 2 ? { pts, closed: false } : null;
+}
+function finishLine(closed) {
+  const d = ui.draft; ui.draft = null;
+  if (!d) return;
+  const shaped = d.shape === 'rect' || d.shape === 'circle';
+  const pts = (shaped ? (d.end ? shapePoints(d.shape, d.pts[0], d.end) : []) : d.pts).map(p => ({ x: Math.round(p.x*10) / 10, y: Math.round(p.y*10) / 10 }));
+  const len = pts.reduce((t, p, i) => i ? t + Math.hypot(p.x - pts[i-1].x, p.y - pts[i-1].y) : 0, 0);
+  if (pts.length < 2 || len < HEX*0.2) { requestRender(); return; }
+  pushUndo();
+  const l = { id: S.nextId++, kind: 'climb', pts, closed: (shaped || !!closed) && pts.length > 2 };
+  l.climbs = addClimbs(lineEdges(l.pts, l.closed));
+  S.lines.push(l); changed();
+}
+function lineAt(w) {
+  const tol = Math.max(HEX*0.25, 10 / view.scale);
+  for (let i = S.lines.length - 1; i >= 0; i--) {
+    const { pts, closed } = S.lines[i], n = pts.length;
+    for (let j = 0; j < (closed ? n : n - 1); j++) {
+      const a = pts[j], b = pts[(j + 1) % n], dx = b.x - a.x, dy = b.y - a.y, L = dx*dx + dy*dy;
+      const t = L ? Math.max(0, Math.min(1, ((w.x - a.x)*dx + (w.y - a.y)*dy) / L)) : 0;
+      if (Math.hypot(w.x - a.x - dx*t, w.y - a.y - dy*t) <= tol) return i;
+    }
+  }
+  return -1;
+}
+function removeLine(i) { pushUndo(); const [l] = S.lines.splice(i, 1); dropClimbs(l); ui.hoverLine = -1; changed(); }
+function setShape(s) {
+  if (ui.draft) finishLine();
+  ui.shape = s; document.querySelectorAll('#shapeSeg button').forEach(b => b.classList.toggle('active', b.dataset.s === s));
+  $('lineHint').innerHTML = {
+    line: 'Click to place points, or drag for one straight line. Double-click, <b>Enter</b> or right-click to finish; click the first point to close the shape.',
+    free: 'Drag to draw. End where you started to close the shape.',
+    rect: 'Drag from one corner to the other.',
+    circle: 'Drag from the middle outwards.',
+  }[s] + ' Lines snap onto the ends of other lines. Right-click a line to remove it.';
+  requestRender();
+}
 function setTool(t) {
+  if (ui.draft && t !== 'line') finishLine();
   ui.tool = t; if (t !== 'template') ui.template = null;
+  $('lineOpts').hidden = t !== 'line'; $('brushSeg').hidden = t === 'line';
   document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
   document.querySelectorAll('.tpl').forEach(b => b.classList.toggle('active', b.dataset.tpl === ui.template));
   updateCursor(); updateRotLabel(); requestRender();
@@ -420,6 +538,7 @@ cv.addEventListener('pointerdown', e => {
   if (e.button === 1 || (e.button === 0 && (ui.space || ui.tool === 'pan'))) {
     ui.panning = true; ui.last = { x: e.clientX, y: e.clientY }; updateCursor(); requestRender(); return;
   }
+  if (ui.tool === 'line') { linePointerDown(e); return; }
   if (ui.tool === 'climb' && (e.button === 0 || e.button === 2)) {
     const E = edgeAt(e); if (!E) return;
     // the first border decides whether this drag adds climbs or removes them; right-drag always removes
@@ -442,6 +561,7 @@ cv.addEventListener('pointermove', e => {
   const h = hexAt(e);
   const prev = ui.hover; ui.hover = h;
   if (h) { const o = axToOff(h.q, h.r); $('stHex').textContent = `Hex ${o.c + 1}, ${o.r + 1}`; } else $('stHex').textContent = 'Hex —';
+  if (ui.tool === 'line') { linePointerMove(e); return; }
   if (ui.tool === 'climb') {
     const E = edgeAt(e), pk = ui.hoverEdge && ui.hoverEdge.key; ui.hoverEdge = E;
     if (ui.painting) paintEdge(edgeAt(e, HEX*0.45));
@@ -452,9 +572,49 @@ cv.addEventListener('pointermove', e => {
   if (!prev || !h || prev.q !== h.q || prev.r !== h.r) requestRender();
 });
 function endPointer() { ui.painting = false; ui.panning = false; updateCursor(); requestRender(); }
-cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointerup', e => { if (ui.tool === 'line' && !ui.panning) linePointerUp(e); endPointer(); });
 cv.addEventListener('pointercancel', endPointer);
-cv.addEventListener('pointerleave', () => { if (!ui.painting && !ui.panning) { ui.hover = null; requestRender(); } });
+cv.addEventListener('pointerleave', () => { if (!ui.painting && !ui.panning) { ui.hover = null; ui.cursor = null; requestRender(); } });
+// Line tool. Line: click point by point (or drag one straight line); the other shapes are one drag
+const cornersOn = e => ui.snapCorners !== e.shiftKey;
+function linePointerDown(e) {
+  const w = worldAt(e);
+  if (e.button === 2) {   // finishes the line being drawn, otherwise removes the line under the cursor
+    if (ui.draft) finishLine(); else { const i = lineAt(w); if (i >= 0) removeLine(i); }
+    return;
+  }
+  if (e.button !== 0) return;
+  const p = snapPoint(w, cornersOn(e)), d = ui.draft;
+  ui.cursor = p;
+  if (!d) { ui.draft = { shape: ui.shape, pts: [p], from: { x: e.clientX, y: e.clientY }, dragging: true }; requestRender(); return; }
+  const last = d.pts[d.pts.length - 1];
+  if (Math.hypot(p.x - last.x, p.y - last.y) < snapDist()) finishLine();          // clicked the last point again (or double-clicked)
+  else if (p.snap === 'start') finishLine(d.pts.length >= 3);                      // back at the start: closes the shape
+  else { d.pts.push(p); if (p.snap === 'end') finishLine(); else requestRender(); } // onto another line's end: joins it
+}
+function linePointerMove(e) {
+  const w = worldAt(e), d = ui.draft;
+  ui.cursor = snapPoint(w, cornersOn(e));
+  ui.hoverLine = d ? -1 : lineAt(w);
+  if (d && d.dragging) {
+    if (d.shape === 'free') { const last = d.pts[d.pts.length - 1]; if (Math.hypot(w.x - last.x, w.y - last.y) > HEX*0.25) d.pts.push({ x: w.x, y: w.y }); }
+    else if (d.shape !== 'line') d.end = ui.cursor;
+  }
+  requestRender();
+}
+function linePointerUp(e) {
+  const d = ui.draft; if (!d || !d.dragging) return;
+  d.dragging = false;
+  const moved = Math.hypot(e.clientX - d.from.x, e.clientY - d.from.y) > 6, p = snapPoint(worldAt(e), cornersOn(e));
+  if (d.shape === 'line') { if (moved) { d.pts.push(p); finishLine(); } return; }   // a click starts a line point by point
+  if (d.shape === 'free') {
+    const start = d.pts[0], last = d.pts[d.pts.length - 1], closes = d.pts.length >= 3 && Math.hypot(p.x - start.x, p.y - start.y) < snapDist();
+    if (!closes) { if (d.pts.length > 1 && Math.hypot(p.x - last.x, p.y - last.y) < HEX*0.25) d.pts.pop(); d.pts.push(p); }   // the end may snap
+    finishLine(closes); return;
+  }
+  d.end = p; finishLine();
+}
+
 cv.addEventListener('wheel', e => {
   if (!S) return; e.preventDefault();
   const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
@@ -475,9 +635,15 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (k === ' ') { e.preventDefault(); if (!ui.space) { ui.space = true; updateCursor(); } return; }
+  if (ui.draft) {   // drawing a line
+    if (k === 'enter') { finishLine(); return; }
+    if (k === 'escape') { ui.draft = null; requestRender(); return; }
+    if (k === 'backspace') { e.preventDefault(); if (ui.draft.pts.length > 1) ui.draft.pts.pop(); else ui.draft = null; requestRender(); return; }
+  }
   if (k === '1') setTool('light'); else if (k === '2') setTool('hard'); else if (k === '3') setTool('erase'); else if (k === '4') setTool('pan');
   else if (k === '5') setTool('deploy'); else if (k === '6') setTool('extract');
   else if (k === '7') setTool('difficult'); else if (k === '8') setTool('climb'); else if (k === '9') setTool('dangerous');
+  else if (k === 'l') setTool('line');
   else if (k === 'r') rotate(e.shiftKey ? -1 : 1);
   else if (k === 'f') fitView();
   else if (k === 'escape') setTool('light');
@@ -523,7 +689,7 @@ function startEditor(map) {
   $('menu').style.display = 'none'; $('editor').style.display = 'grid';
   $('eName').value = S.name; $('eCols').value = S.cols; $('eRows').value = S.rows;
   $('showGrid').checked = S.showGrid; $('gridOp').value = S.gridOpacity; $('bgOp').value = S.bgOpacity;
-  loadBgImage(); updateCounts(); setTool('light'); setBrush(ui.brush);
+  ui.draft = null; loadBgImage(); updateCounts(); setTool('light'); setBrush(ui.brush); setShape(ui.shape);
   requestAnimationFrame(() => { fitView(); });
   saveNow();
 }
@@ -548,7 +714,7 @@ $('btnCreate').onclick = () => {
     version: 1, name: $('mName').value.trim() || 'New Battlefield',
     cols: clampInt($('mCols').value, 4, 100, 20), rows: clampInt($('mRows').value, 4, 100, 15),
     bg: pendingBg ? pendingBg.url : null, bgOpacity: 1, showGrid: true, gridOpacity: 0.45,
-    cells: {}, zones: {}, effects: {}, edges: {}, objects: [], nextId: 1,
+    cells: {}, zones: {}, effects: {}, edges: {}, objects: [], lines: [], nextId: 1,
   });
 };
 $('btnContinue').onclick = () => { if (savedMap) startEditor(normalizeMap(savedMap)); };
@@ -604,6 +770,8 @@ function drawPreview(canvas, type) {
 
 document.querySelectorAll('.tool').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 document.querySelectorAll('#brushSeg button').forEach(b => b.onclick = () => setBrush(+b.dataset.b));
+document.querySelectorAll('#shapeSeg button').forEach(b => b.onclick = () => setShape(b.dataset.s));
+$('snapCorners').onchange = e => { ui.snapCorners = e.target.checked; };
 $('rotL').onclick = () => rotate(-1);
 $('rotR').onclick = () => rotate(1);
 $('autoCover').onchange = e => { ui.autoCover = e.target.checked; };
@@ -622,8 +790,8 @@ $('btnSaveFile').onclick = saveToFile;
 $('btnMenu').onclick = async () => { await saveNow(); S = null; bgImg = null; $('btnBackToBattle').hidden = true; showMenu(); };
 $('btnBackToBattle').onclick = async () => { await saveNow(); location.href = 'Battlemap.html?from=editor'; };
 $('btnClear').onclick = () => {
-  if (!confirm('Remove all cover, zones, effects and templates from this map? (You can undo this.)')) return;
-  pushUndo(); S.cells = {}; S.zones = {}; S.effects = {}; S.edges = {}; S.objects = []; changed();
+  if (!confirm('Remove all cover, zones, effects, lines and templates from this map? (You can undo this.)')) return;
+  pushUndo(); S.cells = {}; S.zones = {}; S.effects = {}; S.edges = {}; S.objects = []; S.lines = []; changed();
 };
 $('btnResize').onclick = () => {
   const c = clampInt($('eCols').value, 4, 100, S.cols), r = clampInt($('eRows').value, 4, 100, S.rows);
@@ -642,6 +810,7 @@ $('btnResize').onclick = () => {
   const effects = {}; keepFx.forEach(k => effects[k] = S.effects[k]);
   const edges = {}; keepEdges.forEach(k => edges[k] = S.edges[k]);
   S.cells = cells; S.zones = zones; S.effects = effects; S.edges = edges; S.objects = keepObjs; undoStack = []; redoStack = []; updateUndoBtns();
+  S.lines.forEach(l => { if (l.climbs) l.climbs = l.climbs.filter(k => edges[k]); });   // lines stay; their climbs off the map go
   fitView(); changed();
 };
 

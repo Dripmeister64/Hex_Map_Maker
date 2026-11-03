@@ -140,6 +140,13 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
 #ownRow .primary kbd{color:#170d08;border-color:rgba(0,0,0,.35)}
 #ownSel{flex:1;background:#0f1319;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit;font-size:12px}
 #btnWho{max-width:190px;overflow:hidden;text-overflow:ellipsis}
+#linksBox{margin-top:10px;background:#111820;border:1px solid var(--line);border-radius:6px;padding:6px 9px}
+#linksBox summary{cursor:pointer;font-size:12.5px;font-weight:600}
+#linksBox[open] summary{margin-bottom:4px}
+#linkList label{margin:8px 0 3px}
+.linkrow{display:flex;gap:5px;align-items:flex-start}
+.linkrow code{flex:1;min-width:0;background:#0f1319;border:1px solid var(--line);border-radius:5px;padding:4px 6px;
+  font:12px/1.35 Consolas,monospace;word-break:break-all;user-select:all}
 </style>
 </head>
 <body>
@@ -208,6 +215,11 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
     <section class="gm-only">
       <h3>GM mode</h3>
       <div class="hint" style="margin-top:0">Everything is unlocked. Hidden tokens look faded to you and are invisible to players. <b>Lock</b> the screen before handing it back.</div>
+      <details class="net-only" id="linksBox">
+        <summary>Player links</summary>
+        <div id="linkList"></div>
+        <div class="hint">Type the address in full, with <b>http://</b> and the <b>:8765</b> at the end.</div>
+      </details>
     </section>
 
     <section id="selBox" hidden>
@@ -1496,6 +1508,7 @@ async function applyState(st) {
   if (st.version < net.version) return;
   const prevRole = net.role;
   net.version = st.version; net.role = st.you.role; net.name = st.you.name; net.players = st.players || [];
+  showLinks(st.links || []);
   if (net.gm && net.role !== 'gm') { net.gm = null; sessionStorage.removeItem('lhm_gm'); }       // unlock no longer valid
   if (net.me && !st.you.name) { net.me = null; localStorage.removeItem('lhm_player'); }        // player no longer known
   if ((net.role === 'gm') !== ui.gm) setMode(net.role === 'gm');
@@ -1580,6 +1593,27 @@ async function claimAction(action, player) {
   if (!r) { toast("Can't reach the server"); return; }
   if (!r.ok) toast(r.error || "That isn't allowed");
   handleState(r.state);
+}
+
+// GM mode's "Player links": the addresses other screens open, ready to copy
+let shownLinks = '';
+function showLinks(links) {
+  const key = JSON.stringify(links); if (key === shownLinks) return; shownLinks = key;
+  const list = $('linkList'); list.innerHTML = '';
+  for (const l of links) {
+    const lab = document.createElement('label'), row = document.createElement('div'), url = document.createElement('code'), b = document.createElement('button');
+    lab.textContent = l.label; row.className = 'linkrow'; url.textContent = l.url;
+    b.className = 'btn small'; b.textContent = 'Copy'; b.onclick = () => copyText(url);
+    row.append(url, b); list.append(lab, row);
+  }
+}
+async function copyText(el) {
+  try { await navigator.clipboard.writeText(el.textContent); }
+  catch (e) {   // pages opened over Wi-Fi have no clipboard API: select the address and copy that
+    const range = document.createRange(), sel = getSelection(); range.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(range);
+    if (!document.execCommand('copy')) { toast('Copy the selected address'); return; }
+  }
+  toast('Copied ' + el.textContent);
 }
 
 // Joining as a player: the name is kept on this device, so a reload or a new tab is still you

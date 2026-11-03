@@ -616,6 +616,39 @@ function outlineEdges(cells) {
   }
   return out;
 }
+// Lines (S.lines) are drawn freely across the map, like a cliff edge or a wall. Each one is a single
+// object, and its kind decides what it does to the hex borders it runs through (for now: makes them climbs).
+// Points are in map pixels; `closed` joins the last point back to the first.
+const LINE_KINDS = {
+  climb: { label:'Climb line', col:'170,180,192', edge:'climb' },
+};
+// The borders a line runs through: those where the line crosses the step between the two hex centres an odd
+// number of times (so a sharp bend that crosses it twice doesn't count, and a closed shape gives a closed ring).
+// Consecutive borders share a corner, so the climbs form an unbroken chain, also where two lines meet.
+function lineEdges(pts, closed) {
+  const odd = new Set(), n = pts.length, segs = closed && n > 2 ? n : n - 1;
+  const cross = (a, b, p) => (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+  for (let i = 0; i < segs; i++) {
+    const P = pts[i], Q = pts[(i + 1) % n];
+    if (Math.hypot(Q.x - P.x, Q.y - P.y) < 1e-6) continue;
+    const pad = HEX * 3, r0 = Math.max(0, Math.floor((Math.min(P.y, Q.y) - pad) / (HEX*1.5))), r1 = Math.min(S.rows - 1, Math.ceil((Math.max(P.y, Q.y) + pad) / (HEX*1.5)));
+    const c0 = Math.max(0, Math.floor((Math.min(P.x, Q.x) - pad) / (HEX*SQRT3))), c1 = Math.min(S.cols - 1, Math.ceil((Math.max(P.x, Q.x) + pad) / (HEX*SQRT3)));
+    for (let row = r0; row <= r1; row++) for (let col = c0; col <= c1; col++) {
+      const a = offToAx(col, row), A = axToPx(a.q, a.r), sa = cross(P, Q, A) >= 0;
+      for (const [dq, dr] of DIRS.slice(0, 3)) {     // each border once
+        const b = { q: a.q + dq, r: a.r + dr }; if (!inB(b.q, b.r)) continue;
+        const B = axToPx(b.q, b.r); if ((cross(P, Q, B) >= 0) === sa) continue;
+        const dp = cross(A, B, P), dqq = cross(A, B, Q); if (dp === dqq) continue;
+        // where the line crosses the step between the two centres; a crossing exactly on a point counts once
+        const t = dp / (dp - dqq), k = edgeKey(a, b);
+        if (t >= 0 && (t < 1 || (i === segs - 1 && !closed))) odd.has(k) ? odd.delete(k) : odd.add(k);
+      }
+    }
+  }
+  return [...odd];
+}
+// The climbs that belong to a building or a line (climbs drawn by hand belong to neither)
+function ownedClimbs() { return new Set(S.objects.concat(S.lines).flatMap(x => x.climbs || [])); }
 // Map keys of every hex that is part of a building's roof
 function roofHexes() {
   const out = new Set();
@@ -834,6 +867,9 @@ function normalizeMap(d) {
     effects: d.effects && typeof d.effects === 'object' ? Object.fromEntries(Object.entries(d.effects).filter(([, v]) => v === 'difficult' || v === 'dangerous')) : {},
     edges: d.edges && typeof d.edges === 'object' ? Object.fromEntries(Object.entries(d.edges).filter(([k, v]) => v === 'climb' && k.includes('|'))) : {},
     objects: Array.isArray(d.objects) ? d.objects.filter(o => o && TEMPLATES[o.type]) : [],
+    lines: Array.isArray(d.lines) ? d.lines.filter(okLine) : [],
     nextId: d.nextId || (Array.isArray(d.objects) ? d.objects.length + 1 : 1),
   };
 }
+const okLine = l => l && LINE_KINDS[l.kind] && Array.isArray(l.pts) && l.pts.length >= 2
+  && l.pts.every(p => p && Number.isFinite(p.x) && Number.isFinite(p.y)) && (!l.climbs || Array.isArray(l.climbs));

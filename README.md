@@ -15,10 +15,11 @@ Running through the server lets both pages share saved data, which the battlemap
 - Start menu: map name, grid size (columns × rows) and an optional background image
 - Paint **light cover** (green) and **hard cover** (dark grey) with a 1, 7 or 19 hex brush
 - Paint **deployment zones** (blue) and **extraction zones** (amber). Zones are a separate layer, so a hex can be cover and part of a zone at the same time
-- Paint **effects**: **difficult terrain** (hatched hexes), **dangerous terrain** (red hazard hexes) and **climbs** (ladder marks on the border between two hexes, e.g. the edge of a ledge or a building's wall). For a straight cliff, trace along the zigzag of the hex outline
+- Paint **effects**: **difficult terrain** (hatched hexes), **dangerous terrain** (red hazard hexes) and **climbs** (ladder marks on the border between two hexes, e.g. the edge of a ledge or a building's wall)
+- Draw **climb lines** for cliffs and walls: a straight line, a freehand stroke, a box or a circle. Every hex border the line runs through becomes a climb, so a cliff can follow the background image instead of the hex outline. Each line is one object: right-click it to remove the line and its climbs. A new line snaps onto the end of another one, so lines join up into one unbroken cliff
 - Sci-fi templates: barricades, crates, debris, alien flora, cargo containers, fuel tanks, comms dish, bunker, hab module, warehouse and command center
 - Large buildings: barracks (6 hexes), reactor (7), landing pad (7, no cover), factory (12), hangar (13) and arcology (19)
-- Buildings get climbs all round their walls when placed (untick "Buildings add climbs at their walls" to skip this). Removing a building removes its climbs, but keeps climbs you drew yourself and walls another building still needs
+- Buildings get climbs all round their walls when placed (untick "Buildings add climbs at their walls" to skip this). Removing a building removes its climbs, but keeps climbs you drew yourself and climbs another building or line still needs
 - Automatic save in the browser, so closing the tab doesn't lose your work
 - Save/open map files (`.hexmap.json`) and export the map as a PNG
 
@@ -27,6 +28,7 @@ Running through the server lets both pages share saved data, which the battlemap
 | Light / hard cover / eraser / pan | `1` / `2` / `3` / `4` |
 | Deployment / extraction zone | `5` / `6` |
 | Difficult terrain / climb / dangerous terrain | `7` / `8` / `9`. With climb, click or drag along borders; click an existing climb or right-drag to remove it. The eraser also clears climbs around the hexes it erases |
+| Climb line | `L`. Pick the shape under the tool. **Line**: click point by point, or drag one straight line; double-click, `Enter` or right-click to finish, click the first point to close the shape. `Backspace` takes back a point, `Esc` drops the line. Hold `Shift` (or tick the box) to snap points to hex corners |
 | Rotate template | `R` (`Shift+R` for the other way) |
 | Remove template or erase cover and zones | Right-click |
 | Zoom | Mouse wheel |
@@ -43,7 +45,7 @@ The pattern is printed in the terminal window when `Battlemap.py` starts. It's k
 
 ### Playing together
 
-Players on the same Wi-Fi can join from their own laptop, tablet or phone: `Battlemap.py` prints a link like `http://192.168.1.23:8765/Battlemap.html` when it starts. They only need that link and a browser. The first time, Windows asks whether Python may accept connections; allow it on private networks.
+Players on the same Wi-Fi can join from their own laptop, tablet or phone: `Battlemap.py` prints a link like `http://192.168.1.23:8765/Battlemap.html` when it starts. They only need that link and a browser. In GM mode, **Player links** (under GM mode in the sidebar) has the addresses ready to copy. Type the address in full, with `http://` and the `:8765` at the end. The first time, Windows asks whether Python may accept connections; allow it on private networks.
 
 - Everyone sees the same battle, and every move shows up on all screens straight away
 - A player types their name when they open the link. Their device remembers it, so reloading the page or opening a new tab keeps them in. **👤** in the top bar changes the name, or stops playing on that device

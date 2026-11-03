@@ -87,6 +87,13 @@ def lan_address():
         return None
 
 
+def links():
+    """The addresses other screens open, for the GM's "Player links" box"""
+    lan = lan_address()
+    out = [{"label": "Players on the same Wi-Fi", "url": f"http://{lan}:{PORT}/Battlemap.html"}] if lan else []
+    return out + [{"label": "This computer", "url": f"http://127.0.0.1:{PORT}/Battlemap.html"}]
+
+
 # =============================================================================
 #   THE SHARED BATTLE
 # =============================================================================
@@ -205,6 +212,7 @@ def view_for(role, pid):
            "you": {"role": role, "name": state["players"].get(pid) if pid else None}}
     if role == "gm":
         out["players"] = [{"id": k, "name": v} for k, v in sorted(state["players"].items(), key=lambda kv: kv[1].lower())]
+        out["links"] = links()
     if b:
         gm = role == "gm"
         out["mapName"] = (b.get("map") or {}).get("name")
@@ -498,7 +506,7 @@ def launch(page):
     print(f"Hex Map Maker is running at http://127.0.0.1:{PORT}/")
     lan = lan_address()
     if lan:
-        print(f"Players on the same Wi-Fi open:  http://{lan}:{PORT}/Battlemap.html")
+        print(f"Players on the same Wi-Fi open:  http://{lan}:{PORT}/Battlemap.html  (also under Player links in GM mode)")
     code = gm_passcode()
     if valid_pattern(code):
         print("GM pattern (numbers show the order to draw the dots):")
