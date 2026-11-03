@@ -136,6 +136,8 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
 .err{color:#ff6b6b;font-size:12px;min-height:18px;margin-top:6px}
 #ownRow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
 #ownText{flex:1 1 100%;font-size:12.5px}
+#ownRow kbd{margin-left:6px}
+#ownRow .primary kbd{color:#170d08;border-color:rgba(0,0,0,.35)}
 #ownSel{flex:1;background:#0f1319;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit;font-size:12px}
 #btnWho{max-width:190px;overflow:hidden;text-overflow:ellipsis}
 </style>
@@ -156,7 +158,7 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
     </div>
     <div class="gm-only">
       <div id="continueBox" class="continue" hidden>
-        <div><b>Continue last battle</b><div id="continueInfo" class="muted"></div></div>
+        <div><b>Continue battle</b><div id="continueInfo" class="muted"></div></div>
         <button class="btn primary" id="btnContinue">Continue</button>
       </div>
       <div id="makerBox" class="continue" hidden>
@@ -196,7 +198,7 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
       <h3>What you can do</h3>
       <ul class="can">
         <li><b>Drag</b> <span class="dot" style="--c:79,209,255"></span>player and <span class="dot" style="--c:111,209,138"></span>ally tokens to move them. The route and movement cost are shown.</li>
-        <li class="net-only"><b>Claim</b> your mech: click it and press <b>Claim</b>. Only you and the GM can then move it. Allies you deploy are yours straight away.</li>
+        <li class="net-only"><b>Claim</b> your mech: click it and press <kbd>C</kbd> (or <b>Claim</b>). Only you and the GM can then move it. Allies you deploy are yours straight away.</li>
         <li><b>Right-drag</b> anywhere to measure range and movement.</li>
         <li><b>Line, Cone, Blast, Burst</b> show what an attack would hit.</li>
         <li><b>Deploy ally</b> for drones, turrets and other deployables.</li>
@@ -206,6 +208,32 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
     <section class="gm-only">
       <h3>GM mode</h3>
       <div class="hint" style="margin-top:0">Everything is unlocked. Hidden tokens look faded to you and are invisible to players. <b>Lock</b> the screen before handing it back.</div>
+    </section>
+
+    <section id="selBox" hidden>
+      <h3>Selected token</h3>
+      <div class="selhead" id="selHead"></div>
+      <div id="ownRow" hidden>
+        <span id="ownText"></span>
+        <button class="btn small primary" id="btnClaim" title="C">Claim<kbd>C</kbd></button>
+        <button class="btn small" id="btnRelease" title="C">Release<kbd>C</kbd></button>
+        <select id="ownSel" class="gm-only" title="Give this token to a player"></select>
+      </div>
+      <div class="readonly" id="selReadonly">Run by the GM. Right-drag from one of your tokens to it to measure the range.</div>
+      <div id="nameRow"><label>Name</label><input id="tName" maxlength="40"></div>
+      <div class="seg gm-only" id="tSideSeg"><span>Side</span></div>
+      <div class="seg" id="tSizeSeg"><span>Size</span></div>
+      <div class="btnrow" id="imgRow">
+        <button class="btn small" id="btnArt" title="Pick from the token art folder">Art…</button>
+        <button class="btn small" id="btnImg" title="Upload a picture for the round token">Image…</button>
+        <button class="btn small" id="btnImgRemove">No image</button>
+      </div>
+      <div class="btnrow" id="actRow">
+        <button class="btn small" id="btnRotate" title="R">⟳ Rotate</button>
+        <button class="btn small" id="btnDup" title="Ctrl+D">Duplicate</button>
+        <button class="btn small danger" id="btnDel" title="Delete">Delete</button>
+      </div>
+      <label class="chk gm-only"><input type="checkbox" id="tHidden"> Hidden from players <kbd>H</kbd></label>
     </section>
 
     <section>
@@ -241,32 +269,6 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
       <label class="chk gm-only"><input type="checkbox" id="newHidden"> New tokens start hidden</label>
     </section>
 
-    <section id="selBox" hidden>
-      <h3>Selected token</h3>
-      <div class="selhead" id="selHead"></div>
-      <div class="readonly" id="selReadonly">Run by the GM. Right-drag from one of your tokens to it to measure the range.</div>
-      <div id="nameRow"><label>Name</label><input id="tName" maxlength="40"></div>
-      <div class="seg gm-only" id="tSideSeg"><span>Side</span></div>
-      <div class="seg" id="tSizeSeg"><span>Size</span></div>
-      <div class="btnrow" id="imgRow">
-        <button class="btn small" id="btnArt" title="Pick from the token art folder">Art…</button>
-        <button class="btn small" id="btnImg" title="Upload a picture for the round token">Image…</button>
-        <button class="btn small" id="btnImgRemove">No image</button>
-      </div>
-      <div class="btnrow" id="actRow">
-        <button class="btn small" id="btnRotate" title="R">⟳ Rotate</button>
-        <button class="btn small" id="btnDup" title="Ctrl+D">Duplicate</button>
-        <button class="btn small danger" id="btnDel" title="Delete">Delete</button>
-      </div>
-      <div id="ownRow" hidden>
-        <span id="ownText"></span>
-        <button class="btn small" id="btnClaim">Claim</button>
-        <button class="btn small" id="btnRelease">Release</button>
-        <select id="ownSel" class="gm-only" title="Give this token to a player"></select>
-      </div>
-      <label class="chk gm-only"><input type="checkbox" id="tHidden"> Hidden from players <kbd>H</kbd></label>
-    </section>
-
     <section>
       <h3>Tokens</h3>
       <div id="roster"></div>
@@ -296,7 +298,7 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
 <div id="joinDialog" class="overlay" hidden>
   <form class="card dialog" id="joinForm" autocomplete="off">
     <h2>Join the battle</h2>
-    <p class="muted" id="joinNote">Type your name. Then click your mech and press <b>Claim</b>: only you and the GM can move it. Allies you deploy are yours straight away.</p>
+    <p class="muted" id="joinNote">Type your name. Then click your mech and press <b>C</b> to claim it: only you and the GM can move it. Allies you deploy are yours straight away.</p>
     <input id="joinName" maxlength="24" placeholder="Your name">
     <div class="err" id="joinErr"></div>
     <div class="actions">
@@ -345,7 +347,7 @@ let bgImg = null;        // decoded background image
 let B = { tokens: [], nextId: 1, log: [] };   // everything placed on top of the map
 const view = { scale: 1, ox: 0, oy: 0 };
 const ui = { tool:'move', X:3, newSize:1, sel:null, hover:null, space:false, panning:false, last:null,
-             drag:null, ruler:null, area:null, showNames:true, hardBlocks:true, gm:false, newHidden:false, trail:null };
+             drag:null, ruler:null, area:null, showNames:true, hardBlocks:true, gm:false, newHidden:false, trails:[] };
 let undoStack = [], redoStack = [];
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
@@ -412,9 +414,8 @@ const playerSide = t => t.side === 'pc' || t.side === 'ally';
 const seen = t => ui.gm || !t.hidden;
 const canMove = t => ui.gm || (net.role === 'player' ? !!t.mine : net.role === 'table' && playerSide(t));
 const canRemove = t => ui.gm || (t.side === 'ally' && canMove(t));
-const canClaim = t => net.role === 'player' && playerSide(t) && !t.owner && !t.hidden;
 const whyLocked = t => !playerSide(t) ? `${t.name} is run by the GM`
-  : t.owner ? `${t.name} is played by ${t.owner}` : net.role === 'player' ? `Claim ${t.name} to move it` : `Join as a player to move ${t.name}`;
+  : t.owner ? `${t.name} is played by ${t.owner}` : net.role === 'player' ? `Press C to claim ${t.name}, then move it` : `Join as a player, then press C to claim ${t.name}`;
 const shown = () => B.tokens.filter(seen);
 function tokenAt(h) {
   for (let i = B.tokens.length - 1; i >= 0; i--) {
@@ -787,6 +788,8 @@ function drawRuler(ctx, lw, M, labels) {
 
 function requestRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(render); } }
 let renderQueued = false, lastInfo = '', dragMove = null;
+const TRAIL_MS = 5000;   // how long a move's trail takes to fade away
+function addTrail(id, m) { if (m) ui.trails = ui.trails.filter(tr => tr.id !== id).concat({ id, m, at: performance.now() }); }
 function render() {
   renderQueued = false;
   const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
@@ -813,11 +816,15 @@ function render() {
     labels.push({ x: b.x, y: b.y - DISC[t.size]*HEX, text: (m ? moveText(m) : `No clear path (${hd(D.from, t)} straight)`) + (moveWarnings(m).length ? ' ⚠' : ''),
                   col: m && (m.extra || moveWarnings(m).length) ? `rgb(${EFFECTS.difficult.col})` : '#ffffff' });
   }
-  if (ui.trail && !D) {   // the last move fades out, so everyone at the table sees what just happened
-    const age = (performance.now() - ui.trail.at) / 6000, t = tokenById(ui.trail.id);
-    if (age >= 1 || !t || !seen(t)) ui.trail = null;
-    else { ctx.save(); ctx.globalAlpha = 1 - age; drawMovePath(ctx, ui.trail.m, 'rgba(255,255,255,0.8)'); ctx.restore(); requestRender(); }
-  }
+  // recent moves fade out, so everyone sees what just happened (on every screen, whoever made the move)
+  const now = performance.now();
+  ui.trails = ui.trails.filter(tr => {
+    const age = (now - tr.at) / TRAIL_MS, t = tokenById(tr.id);
+    if (age >= 1 || !t || !seen(t) || (D && D.id === tr.id)) return false;
+    ctx.save(); ctx.globalAlpha = 1 - age; drawMovePath(ctx, tr.m, 'rgba(255,255,255,0.8)'); ctx.restore();
+    return true;
+  });
+  if (ui.trails.length) requestRender();
   const hit = new Set(A ? A.hits.map(t => t.id) : []);
   for (const t of shown()) drawToken(ctx, t, lw, hit.has(t.id));
   drawRuler(ctx, lw, M, labels);
@@ -956,7 +963,7 @@ function showBattleView() { menuShown = false; ui.atMenu = false; $('menu').styl
 // Start a battle. With the server this replaces the battle for every screen, so only the GM can.
 function setBattle(map, tokens, nextId, log) {
   undoStack = []; redoStack = []; updateUndoBtns();
-  ui.sel = null; ui.ruler = null; ui.area = null; ui.drag = null; ui.trail = null;
+  ui.sel = null; ui.ruler = null; ui.area = null; ui.drag = null; ui.trails = [];
   if (net.online) { startBattle(map, tokens, nextId, log); return; }
   S = null; showMap(map); B = { tokens: normalizeTokens(tokens), nextId: 1, log: normalizeLog(log) };
   B.nextId = Math.max(nextId || 1, ...B.tokens.map(t => t.id + 1));
@@ -1055,12 +1062,12 @@ function updateSelBox() {
   $('selReadonly').hidden = edit;
   $('selReadonly').textContent = !playerSide(t) ? 'Run by the GM. Right-drag from one of your tokens to it to measure the range.'
     : t.owner ? `Played by ${t.owner}. Only they and the GM can move it.`
-    : net.role === 'player' ? 'Nobody plays this yet. Claim it to move it.' : 'Join as a player to claim it.';
+    : net.role === 'player' ? 'Nobody plays this yet. Press C (or Claim) to play it.' : 'Join as a player, then press C to claim it.';
   const own = net.online && playerSide(t);
   $('ownRow').hidden = !own;
   if (own) {
     $('ownText').innerHTML = t.owner ? `Played by <b>${esc(t.owner)}</b>${t.mine ? ' (you)' : ''}` : '<span class="muted">Not claimed yet</span>';
-    $('btnClaim').hidden = !canClaim(t);
+    $('btnClaim').hidden = !!t.owner || ui.gm || t.hidden;   // screens that haven't joined get the join dialog
     $('btnRelease').hidden = !(t.owner && (t.mine || ui.gm));
     const sel = $('ownSel'), key = JSON.stringify(net.players);
     if (ui.gm && sel.dataset.key !== key) {
@@ -1122,8 +1129,8 @@ $('xUp').onclick = () => setX(ui.X + 1);
 $('tName').onfocus = () => pushUndo();
 $('tName').oninput = e => { const t = selected(); if (!t || !canMove(t)) return; t.name = e.target.value; updateRoster(); requestRender(); if (!net.online) scheduleSave(); };
 $('tName').onchange = () => commit();
-$('btnClaim').onclick = () => claimAction('claim');
-$('btnRelease').onclick = () => claimAction('release');
+$('btnClaim').onclick = claimKey;
+$('btnRelease').onclick = claimKey;
 $('ownSel').onchange = e => claimAction('assign', e.target.value || null);
 $('tHidden').onchange = e => setHidden(selected(), e.target.checked);
 $('newHidden').onchange = e => { ui.newHidden = e.target.checked; };
@@ -1226,7 +1233,7 @@ function endPointer() {
       const m = movePath(t, D.from, t), n = m ? m.hexes : hd(D.from, t);
       logEvent(`${t.name} moved ${n} hex${n === 1 ? '' : 'es'}` + (m && m.extra ? ` (Move ${m.cost})` : '')
         + (m && m.engagedBy ? `, engaged by ${m.engagedBy.name}` : ''), t.hidden || (m && m.engagedBy && m.engagedBy.hidden));
-      if (m) ui.trail = { id: t.id, m, at: performance.now() };
+      addTrail(t.id, m);
       commit();
     }
   }
@@ -1274,6 +1281,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'r') { const t = selected(); if (t && !t.art && (t.size === 2 || t.size === 4)) editSelected(x => { x.rot = (x.rot + (e.shiftKey ? 5 : 1)) % 6; }); }
   else if (k === 'f') fitView();
   else if (k === 'h') { const t = selected(); if (t) setHidden(t, !t.hidden); }
+  else if (k === 'c') claimKey();
   else if (k === 'escape') { if (ui.ruler || ui.area) clearMeasure(); else if (ui.sel != null) { ui.sel = null; commitView(); } }
 });
 window.addEventListener('keyup', e => { if (e.key === ' ') { if (!typing(e)) e.preventDefault(); ui.space = false; updateCursor(); } });
@@ -1504,12 +1512,18 @@ async function applyState(st) {
   // the server's tokens win, except for what this screen is in the middle of (a drag, or typing a name)
   const dragging = ui.drag && tokenById(ui.drag.id), dragAt = dragging && { q: dragging.q, r: dragging.r };
   const typed = document.activeElement === $('tName') && selected() ? $('tName').value : null, typedId = ui.sel;
+  const before = net.synced;   // where the tokens were, to draw a trail for moves made on other screens
   const order = new Map(B.tokens.map((t, i) => [t.id, i])), rank = t => order.has(t.id) ? order.get(t.id) : 1e9;
   B = { tokens: normalizeTokens(st.tokens).sort((a, b) => rank(a) - rank(b)), nextId: st.nextId, log: normalizeLog(st.log) };
   net.synced = tokenJson();
   const active = new Set();
   if (dragAt) { const t = tokenById(ui.drag.id); if (t) { Object.assign(t, dragAt); active.add(t.id); } else ui.drag = null; }
   if (typed != null) { const t = tokenById(typedId); if (t && canMove(t)) { t.name = typed; active.add(t.id); } }
+  if (before) for (const t of B.tokens) {
+    const was = before.get(t.id) && JSON.parse(before.get(t.id));
+    if (was && !active.has(t.id) && (was.q !== t.q || was.r !== t.r) && was.size === t.size && was.rot === t.rot)
+      addTrail(t.id, movePath(t, { q: was.q, r: was.r }, t));
+  }
   if (undoBase) {   // other screens' changes are not part of this screen's undo step
     for (const t of B.tokens) if (!active.has(t.id)) undoBase.set(t.id, net.synced.get(t.id));
     for (const id of [...undoBase.keys()]) if (!tokenById(id)) undoBase.delete(id);
@@ -1547,10 +1561,20 @@ function remapIds(map) {
   B.tokens.forEach(t => { if (map[t.id]) t.id = map[t.id]; });
   if (map[ui.sel]) ui.sel = map[ui.sel];
   if (ui.drag && map[ui.drag.id]) ui.drag.id = map[ui.drag.id];
-  if (ui.trail && map[ui.trail.id]) ui.trail.id = map[ui.trail.id];
+  ui.trails.forEach(tr => { if (map[tr.id]) tr.id = map[tr.id]; });
+}
+// C, or the Claim / Release buttons: claim the selected token, or let go of your own
+function claimKey() {
+  const t = selected(); if (!t || !net.online) return;
+  if (!playerSide(t)) { toast('Only player and ally tokens can be claimed'); return; }
+  if (t.owner && (t.mine || ui.gm)) { claimAction('release'); return; }
+  if (t.owner) { toast(`${t.name} is played by ${t.owner}`); return; }
+  if (ui.gm) { toast('In GM mode, give it to a player with the dropdown'); return; }
+  claimAction('claim');
 }
 async function claimAction(action, player) {
   const t = selected(); if (!t) return;
+  if (action === 'claim' && net.role !== 'player') { openJoin(`Join as a player to claim ${t.name}.`); return; }
   await pushChanges();   // anything still on its way goes first
   const r = await api('claim', { id: t.id, action, player }).catch(() => null);
   if (!r) { toast("Can't reach the server"); return; }
@@ -1563,17 +1587,17 @@ function updateWho() {
   const b = $('btnWho'); b.hidden = !net.online;
   b.textContent = net.me && net.name ? `👤 ${net.name}` : net.role === 'table' ? '👤 Table screen' : '👤 Join';
 }
-function openJoin() {
-  $('joinErr').textContent = ''; $('joinName').value = net.me ? net.name || '' : '';
+function openJoin(why) {
+  $('joinErr').textContent = typeof why === 'string' ? why : ''; $('joinName').value = net.me ? net.name || '' : '';
   $('joinLeave').hidden = !net.me; $('joinLeave').textContent = `Stop playing as ${net.name || 'this player'}`;
   $('joinCancel').textContent = net.role === 'guest' ? 'Just watch' : 'Cancel';
   $('joinNote').innerHTML = (net.role === 'table' && !net.me
     ? 'This is the table screen: it moves every player and ally token. Only join with a name if this screen is one player\'s. '
-    : '') + 'Type your name, then click your mech and press <b>Claim</b>: only you and the GM can move it. Allies you deploy are yours straight away.';
+    : '') + 'Type your name, then click your mech and press <b>C</b> to claim it: only you and the GM can move it. Allies you deploy are yours straight away.';
   $('joinDialog').hidden = false; $('joinName').focus();
 }
 function closeJoin() { $('joinDialog').hidden = true; }
-$('btnWho').onclick = openJoin;
+$('btnWho').onclick = () => openJoin();
 $('joinCancel').onclick = closeJoin;
 $('joinForm').onsubmit = async e => {
   e.preventDefault();
@@ -1594,7 +1618,7 @@ function setMode(gm) {
   $('btnGm').textContent = gm ? '🔓 Lock to player view' : '🔒 GM';
   // each side only undoes its own changes, and no measurement from a hidden token survives locking
   undoStack = []; redoStack = []; updateUndoBtns();
-  if (!gm) { clearMeasure(); ui.trail = null; }
+  if (!gm) { clearMeasure(); ui.trails = []; }
   setTool(ui.tool);
   if (S) commitView(); else if (menuShown) showMenu();
 }
@@ -1681,7 +1705,7 @@ async function submitPattern() {
 
 function openGmDialog() {
   if (ui.gm) { lockGm(); return; }
-  if (location.protocol === 'file:') { setMode(true); toast('Opened without Battlemap.py, so there is no passcode check'); return; }
+  if (location.protocol === 'file:') { setMode(true); toast('Opened without Battlemap.py, so there is no GM pattern check'); return; }
   padReset(); $('gmDialog').hidden = false;
 }
 function closeGmDialog() { $('gmDialog').hidden = true; pad.down = false; }
@@ -1697,7 +1721,7 @@ $('gmClear').onclick = padReset;
 $('gmForm').onsubmit = e => { e.preventDefault(); submitPattern(); };
 
 /* =========================================================================
-   BOOT  (always starts in the player view, on the last battle if there is one)
+   BOOT  (always starts in the player view, on the running battle if there is one)
    ========================================================================= */
 setX(ui.X); setMode(false);
 const fromEditor = new URLSearchParams(location.search).get('from') === 'editor';

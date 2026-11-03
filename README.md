@@ -47,7 +47,7 @@ Players on the same Wi-Fi can join from their own laptop, tablet or phone: `Batt
 
 - Everyone sees the same battle, and every move shows up on all screens straight away
 - A player types their name when they open the link. Their device remembers it, so reloading the page or opening a new tab keeps them in. **👤** in the top bar changes the name, or stops playing on that device
-- To take a mech, a player clicks it and presses **Claim**. Only they and the GM can then move it. Allies they deploy are theirs straight away. **Release** gives a token back. In GM mode, the selected token's dropdown gives it to any player
+- To take a mech, a player clicks it and presses `C` (or **Claim**, at the top of the sidebar). Only they and the GM can then move it. Allies they deploy are theirs straight away. `C` again (or **Release**) gives it back. In GM mode, the selected token's dropdown gives it to any player
 - The screen on the computer running `Battlemap.py` is the **table screen**: without a name, it moves every player and ally token, for players sitting at the table. Other devices can watch without a name, but have to join to move anything
 - The GM unlocks on any screen with the pattern. Each screen has its own mode, so players stay in the player view on theirs
 - The battle is kept by the server in `battle_state.json` (git-ignored), so it survives restarting `Battlemap.py`
@@ -65,7 +65,7 @@ Players on the same Wi-Fi can join from their own laptop, tablet or phone: `Batt
 
 - **Hiding**: tick "Hidden from players" on a selected token (or press `H`), or tick "New tokens start hidden" before placing an ambush. Untick it to reveal the token
 - **Recent** (top right of the map) lists moves, deployments and reveals, so the table can follow what happened. Entries about hidden tokens only appear in GM mode
-- The last move leaves a fading trail on the map
+- Every move leaves a trail that fades away over 5 seconds, on every screen, so everyone sees what just moved and where
 - Undo only takes back changes made on this screen in its current mode, never another screen's, so players can't undo the GM's setup or each other's moves
 
 - Load the map that's open in the Map Maker, a `.hexmap.json` file, or a saved `.battle.json` (map and tokens together). You can also drop the file onto the page
@@ -102,6 +102,7 @@ The rulebook doesn't pin down hex shapes for large tokens or cones. These are th
 | Use an area tool | Press on the token, drag to aim (Burst: just click the token) |
 | Clear measurement, then selection | `Esc` |
 | Hide / reveal selected token (GM) | `H` |
+| Claim / release the selected mech | `C` |
 | Rotate a Size 2 or 4 token | `R` |
 | Duplicate / delete selected token | `Ctrl+D` / `Delete` |
 | Pan | Drag empty space, Space + drag, or middle-drag |

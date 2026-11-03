@@ -41,7 +41,7 @@ ROOT = pathlib.Path(__file__).resolve().parent
 HOST, PORT = "0.0.0.0", 8765          # 0.0.0.0: other devices on the local network can connect
 PASSCODE_FILE = ROOT / "gm_passcode.txt"
 STATE_FILE = ROOT / "battle_state.json"
-# only the pages and their assets are served, never the passcode, the battle state, scripts or .git
+# only the pages and their assets are served, never the GM pattern, the battle state, scripts or .git
 SERVED = {".html", ".js", ".css", ".png", ".jpg", ".jpeg", ".svg", ".webp", ".ico"}
 # token art lives in a local folder that git ignores; the battlemap lists it through /api/tokens
 TOKEN_DIRS = ("Tokens", "tokens")
