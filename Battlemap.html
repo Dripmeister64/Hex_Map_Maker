@@ -95,6 +95,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
 
 /* ---------- PLAYER VIEW / GM MODE ---------- */
 body:not(.gm) .gm-only, body.gm .player-only{display:none!important}
+body:not(.net) .net-only{display:none!important}
 #modeBadge{font-size:11px;font-weight:700;letter-spacing:.14em;padding:4px 9px;border-radius:4px;border:1px solid;white-space:nowrap}
 body:not(.gm) #modeBadge{color:var(--accent2);border-color:#2c5a73;background:#122431}
 body.gm #modeBadge{color:#170d08;background:var(--accent);border-color:var(--accent)}
@@ -133,6 +134,10 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
 #artGrid img{width:100%;aspect-ratio:1;object-fit:contain;object-position:bottom;background:#0f1319;border-radius:4px}
 #artGrid button.active{border-color:var(--accent2);box-shadow:inset 0 0 0 1px var(--accent2)}
 .err{color:#ff6b6b;font-size:12px;min-height:18px;margin-top:6px}
+#ownRow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+#ownText{flex:1 1 100%;font-size:12.5px}
+#ownSel{flex:1;background:#0f1319;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit;font-size:12px}
+#btnWho{max-width:190px;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -182,6 +187,7 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
     <button class="btn" id="btnClearMeasure" title="Esc">Clear measurement</button>
     <button class="btn gm-only" id="btnSaveFile" title="Ctrl+S">Save battle to file</button>
     <button class="btn gm-only" id="btnMenu">Main menu</button>
+    <button class="btn" id="btnWho" hidden title="Join as a player, or change your name">👤 Join</button>
     <button class="btn" id="btnGm">🔒 GM</button>
   </header>
 
@@ -190,6 +196,7 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
       <h3>What you can do</h3>
       <ul class="can">
         <li><b>Drag</b> <span class="dot" style="--c:79,209,255"></span>player and <span class="dot" style="--c:111,209,138"></span>ally tokens to move them. The route and movement cost are shown.</li>
+        <li class="net-only"><b>Claim</b> your mech: click it and press <b>Claim</b>. Only you and the GM can then move it. Allies you deploy are yours straight away.</li>
         <li><b>Right-drag</b> anywhere to measure range and movement.</li>
         <li><b>Line, Cone, Blast, Burst</b> show what an attack would hit.</li>
         <li><b>Deploy ally</b> for drones, turrets and other deployables.</li>
@@ -251,6 +258,12 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
         <button class="btn small" id="btnDup" title="Ctrl+D">Duplicate</button>
         <button class="btn small danger" id="btnDel" title="Delete">Delete</button>
       </div>
+      <div id="ownRow" hidden>
+        <span id="ownText"></span>
+        <button class="btn small" id="btnClaim">Claim</button>
+        <button class="btn small" id="btnRelease">Release</button>
+        <select id="ownSel" class="gm-only" title="Give this token to a player"></select>
+      </div>
       <label class="chk gm-only"><input type="checkbox" id="tHidden"> Hidden from players <kbd>H</kbd></label>
     </section>
 
@@ -277,6 +290,21 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
     <span>Right-drag: measure · Drag empty space / middle-drag: pan · Wheel: zoom · [ ]: area size · Esc: clear</span>
     <span id="stSave"></span>
   </footer>
+</div>
+
+<!-- ====================== JOIN AS A PLAYER ====================== -->
+<div id="joinDialog" class="overlay" hidden>
+  <form class="card dialog" id="joinForm" autocomplete="off">
+    <h2>Join the battle</h2>
+    <p class="muted" id="joinNote">Type your name. Then click your mech and press <b>Claim</b>: only you and the GM can move it. Allies you deploy are yours straight away.</p>
+    <input id="joinName" maxlength="24" placeholder="Your name">
+    <div class="err" id="joinErr"></div>
+    <div class="actions">
+      <button type="button" class="btn" id="joinLeave" hidden>Stop playing</button>
+      <button type="button" class="btn" id="joinCancel">Just watch</button>
+      <button type="submit" class="btn primary">Join</button>
+    </div>
+  </form>
 </div>
 
 <!-- ====================== TOKEN ART ====================== -->
@@ -322,6 +350,25 @@ let undoStack = [], redoStack = [];
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
 
+// Shared battles: when the page comes from Battlemap.py's server, the battle lives there and every screen plays
+// on the same one. Opened straight from disk, the page works on its own like before (as the table screen).
+const net = {
+  online: location.protocol === 'http:' || location.protocol === 'https:',
+  role: 'table', name: null, players: [], boot: null, version: 0, mapVersion: null, battle: null,
+  synced: null,     // the tokens as the server last sent them (id -> JSON), to work out what this screen changed
+  outLog: [], pending: 0, latest: null, applying: false, proc: null, es: null, asked: false,
+  me: JSON.parse(localStorage.getItem('lhm_player') || 'null'),   // { id, name } once this device joined as a player
+  gm: sessionStorage.getItem('lhm_gm'),                            // the GM session from the pattern unlock
+};
+async function api(path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (net.me) headers['X-Player'] = net.me.id;
+  if (net.gm) headers['X-GM'] = net.gm;
+  const r = await fetch('api/' + path, body === undefined ? { headers } : { method: 'POST', headers, body: JSON.stringify(body) });
+  const d = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, ...d };
+}
+
 /* =========================================================================
    TOKENS & LANCER RULES
    ========================================================================= */
@@ -357,12 +404,17 @@ function tokenCells(t) {
   return TOKEN_FP[t.size].map(([dq, dr]) => { const [a, b] = rotAx(dq, dr, t.rot); return cellAt(t.q + a, t.r + b); });
 }
 const tokenById = id => B.tokens.find(t => t.id === id) || null;
-// Player view: players move and edit player and ally tokens, and may only deploy allies.
-// Everything else needs GM mode, and hidden tokens don't exist for players at all.
+// Player view: the table screen moves and edits every player and ally token; a player who joined by name only
+// the ones they have claimed (allies they deploy are theirs straight away). Only allies can be deployed or
+// removed. Everything else needs GM mode, and hidden tokens don't exist for players at all.
+// The server checks all of this again.
 const playerSide = t => t.side === 'pc' || t.side === 'ally';
 const seen = t => ui.gm || !t.hidden;
-const canMove = t => ui.gm || playerSide(t);
-const canRemove = t => ui.gm || t.side === 'ally';
+const canMove = t => ui.gm || (net.role === 'player' ? !!t.mine : net.role === 'table' && playerSide(t));
+const canRemove = t => ui.gm || (t.side === 'ally' && canMove(t));
+const canClaim = t => net.role === 'player' && playerSide(t) && !t.owner && !t.hidden;
+const whyLocked = t => !playerSide(t) ? `${t.name} is run by the GM`
+  : t.owner ? `${t.name} is played by ${t.owner}` : net.role === 'player' ? `Claim ${t.name} to move it` : `Join as a player to move ${t.name}`;
 const shown = () => B.tokens.filter(seen);
 function tokenAt(h) {
   for (let i = B.tokens.length - 1; i >= 0; i--) {
@@ -697,7 +749,7 @@ function drawToken(ctx, t, lw, hit) {
     circle(ctx, m.x, m.y, R + HEX*(hit ? 0.27 : 0.15)); ctx.setLineDash([HEX*0.18, HEX*0.12]);
     ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = Math.max(lw*2.5, HEX*0.05); ctx.stroke(); ctx.setLineDash([]);
   }
-  if (ui.showNames && t.name) pill(ctx, m.x, m.y + R + HEX*0.22, t.name, HEX*0.26, `rgba(${col},0.9)`);
+  if (ui.showNames && t.name) pill(ctx, m.x, m.y + R + HEX*0.22, t.name + (t.owner ? ` · ${t.mine ? 'you' : t.owner}` : ''), HEX*0.26, `rgba(${col},0.9)`);
   ctx.restore();
   if (t.hidden) pill(ctx, m.x, m.y - R - HEX*0.18, 'HIDDEN', HEX*0.22, '#ff6b3d', 'rgba(40,16,8,0.9)');
 }
@@ -829,21 +881,50 @@ function centerOn(t) {
 /* =========================================================================
    BATTLE STATE  (every token change goes through commit())
    ========================================================================= */
-const snap = () => JSON.stringify(B);
-function pushUndo() { undoStack.push(snap()); if (undoStack.length > 200) undoStack.shift(); redoStack = []; updateUndoBtns(); }
-function undo() { if (!undoStack.length) return; redoStack.push(snap()); B = JSON.parse(undoStack.pop()); commit(); updateUndoBtns(); }
-function redo() { if (!redoStack.length) return; undoStack.push(snap()); B = JSON.parse(redoStack.pop()); commit(); updateUndoBtns(); }
+// Undo only takes back this screen's own changes, never another screen's: each step keeps the tokens it changed,
+// as they were before and after. pushUndo() marks the start of a change, commit() its end.
+const tokenJson = () => new Map(B.tokens.map(t => [t.id, JSON.stringify(t)]));
+let undoBase = null;
+function pushUndo() { undoBase = tokenJson(); }
+function recordUndo() {
+  if (!undoBase) return;
+  const now = tokenJson(), before = {}, after = {}; let any = false;
+  for (const id of new Set([...undoBase.keys(), ...now.keys()])) {
+    const a = undoBase.get(id) || null, b = now.get(id) || null;
+    if (a !== b) { before[id] = a; after[id] = b; any = true; }
+  }
+  undoBase = null;
+  if (!any) return;
+  undoStack.push({ before, after }); if (undoStack.length > 200) undoStack.shift(); redoStack = []; updateUndoBtns();
+}
+function applyStep(vals) {
+  for (const [id, json] of Object.entries(vals)) {
+    const i = B.tokens.findIndex(t => t.id === +id);
+    if (json == null) { if (i >= 0) B.tokens.splice(i, 1); }
+    else if (i >= 0) B.tokens[i] = JSON.parse(json); else B.tokens.push(JSON.parse(json));
+  }
+}
+function undo() { const s = undoStack.pop(); if (!s) return; applyStep(s.before); redoStack.push(s); commit(true); updateUndoBtns(); }
+function redo() { const s = redoStack.pop(); if (!s) return; applyStep(s.after); undoStack.push(s); commit(true); updateUndoBtns(); }
 function updateUndoBtns() { $('btnUndo').disabled = !undoStack.length; $('btnRedo').disabled = !redoStack.length; }
-function commit() { commitView(); scheduleSave(); }
+function commit(fromUndo) { if (!fromUndo) recordUndo(); commitView(); scheduleSave(true); }
 // The "Recent" list. GM-only entries (anything about hidden tokens) never show in the player view.
-function logEvent(text, gmOnly) { B.log = (B.log || []).concat({ at: Date.now(), text, gm: !!gmOnly }).slice(-40); }
+function logEvent(text, gmOnly) {
+  B.log = (B.log || []).concat({ at: Date.now(), text, gm: !!gmOnly }).slice(-40);
+  if (net.online) net.outLog.push({ text, gm: !!gmOnly });
+}
 
 let saveTimer = null, dirty = false;
 function setSaveStatus(t, cls) { const el = $('stSave'); el.textContent = t; el.className = cls || ''; }
-function scheduleSave() { dirty = true; setSaveStatus('Unsaved changes…'); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 600); }
+function scheduleSave(now) {
+  clearTimeout(saveTimer);
+  if (net.online) { if (now) pushChanges(); else saveTimer = setTimeout(pushChanges, 400); return; }
+  dirty = true; setSaveStatus('Unsaved changes…'); saveTimer = setTimeout(saveNow, 600);
+}
 const battleData = () => ({ format: 'lancer-battle', version: 1, map: S, tokens: B.tokens, nextId: B.nextId, log: B.log });
 async function saveNow() {
   clearTimeout(saveTimer); if (!S) return;
+  if (net.online) return pushChanges();
   try { await store.put('battle', battleData()); dirty = false; setSaveStatus('Autosaved ✓', 'ok'); }
   catch (e) { console.error(e); setSaveStatus('Autosave failed – use "Save battle to file"', 'bad'); }
 }
@@ -857,22 +938,36 @@ function normalizeTokens(list) {
     q: Math.round(t.q), r: Math.round(t.r), rot: ((Math.round(t.rot) || 0) % 6 + 6) % 6,
     img: typeof t.img === 'string' ? t.img : null, hidden: !!t.hidden,
     art: typeof t.art === 'string' && /^[Tt]okens\/[^/]+$/.test(t.art) ? t.art : null,
+    // who plays it: their name, whether it's this screen's player, and (for the GM) their id
+    owner: typeof t.owner === 'string' ? t.owner : null, mine: !!t.mine, ownerId: typeof t.ownerId === 'string' ? t.ownerId : null,
   }));
 }
 const normalizeLog = list => (Array.isArray(list) ? list : []).filter(e => e && typeof e.text === 'string')
   .map(e => ({ at: +e.at || Date.now(), text: e.text.slice(0, 120), gm: !!e.gm })).slice(-40);
+// Show a map on this screen; the view is only refitted when the map's size changes
+function showMap(map) {
+  const refit = !S || S.cols !== map.cols || S.rows !== map.rows, sameBg = S && S.bg === map.bg;
+  S = map; pathMemo = { key: null, val: null };
+  $('bName').textContent = S.name; $('showGrid').checked = S.showGrid; $('gridOp').value = S.gridOpacity;
+  if (!sameBg) { bgImg = null; if (S.bg) { const img = new Image(); img.onload = () => { bgImg = img; requestRender(); }; img.src = S.bg; } }
+  if (refit) requestAnimationFrame(fitView);
+}
+function showBattleView() { menuShown = false; ui.atMenu = false; $('menu').style.display = 'none'; $('battle').style.display = 'grid'; }
+// Start a battle. With the server this replaces the battle for every screen, so only the GM can.
 function setBattle(map, tokens, nextId, log) {
-  S = map; pathMemo = { key: null, val: null }; B = { tokens: normalizeTokens(tokens), nextId: 1, log: normalizeLog(log) };
-  B.nextId = Math.max(nextId || 1, ...B.tokens.map(t => t.id + 1));
   undoStack = []; redoStack = []; updateUndoBtns();
   ui.sel = null; ui.ruler = null; ui.area = null; ui.drag = null; ui.trail = null;
-  menuShown = false; $('menu').style.display = 'none'; $('battle').style.display = 'grid';
-  $('bName').textContent = S.name; $('showGrid').checked = S.showGrid; $('gridOp').value = S.gridOpacity;
-  bgImg = null;
-  if (S.bg) { const img = new Image(); img.onload = () => { bgImg = img; requestRender(); }; img.src = S.bg; }
-  setTool(ui.tool); commit();
-  requestAnimationFrame(fitView);
+  if (net.online) { startBattle(map, tokens, nextId, log); return; }
+  S = null; showMap(map); B = { tokens: normalizeTokens(tokens), nextId: 1, log: normalizeLog(log) };
+  B.nextId = Math.max(nextId || 1, ...B.tokens.map(t => t.id + 1));
+  showBattleView(); setTool(ui.tool); commit();
   saveNow();
+}
+async function startBattle(map, tokens, nextId, log) {
+  const r = await api('battle', { map, tokens: normalizeTokens(tokens), nextId, log: normalizeLog(log) }).catch(() => null);
+  if (!r || !r.ok) { alert("Couldn't start the battle: " + ((r && r.error) || "the server didn't answer")); return; }
+  S = null; showMap(map); net.mapVersion = r.state.mapVersion; showBattleView(); setTool(ui.tool);
+  await handleState(r.state);
 }
 
 function freeSpotFor(t) {
@@ -888,6 +983,7 @@ function freeSpotFor(t) {
 }
 function addToken(side) {
   if (!ui.gm && side !== 'ally') return;
+  if (net.role === 'guest') { openJoin(); return; }
   const n = B.tokens.filter(t => t.side === side).length + 1;
   const t = { id: B.nextId, name: `${SIDES[side].label} ${n}`, side, size: ui.newSize, q: 0, r: 0, rot: 0, img: null, hidden: ui.gm && ui.newHidden };
   const h = freeSpotFor(t); if (!h) { toast('No free space for a token that size'); return; }
@@ -957,6 +1053,24 @@ function updateSelBox() {
   $('selHead').innerHTML = `<span class="dot" style="--c:${side.col}"></span><b>${esc(t.name)}</b>` +
     `<span class="muted">${side.label} · Size ${sizeLabel(t.size)}${t.hidden ? ' · hidden from players' : ''}</span>`;
   $('selReadonly').hidden = edit;
+  $('selReadonly').textContent = !playerSide(t) ? 'Run by the GM. Right-drag from one of your tokens to it to measure the range.'
+    : t.owner ? `Played by ${t.owner}. Only they and the GM can move it.`
+    : net.role === 'player' ? 'Nobody plays this yet. Claim it to move it.' : 'Join as a player to claim it.';
+  const own = net.online && playerSide(t);
+  $('ownRow').hidden = !own;
+  if (own) {
+    $('ownText').innerHTML = t.owner ? `Played by <b>${esc(t.owner)}</b>${t.mine ? ' (you)' : ''}` : '<span class="muted">Not claimed yet</span>';
+    $('btnClaim').hidden = !canClaim(t);
+    $('btnRelease').hidden = !(t.owner && (t.mine || ui.gm));
+    const sel = $('ownSel'), key = JSON.stringify(net.players);
+    if (ui.gm && sel.dataset.key !== key) {
+      sel.innerHTML = ''; sel.dataset.key = key;
+      [['', 'Give to a player…'], ...net.players.map(p => [p.id, p.name])].forEach(([v, n]) => {
+        const o = document.createElement('option'); o.value = v; o.textContent = n; sel.appendChild(o);
+      });
+    }
+    if (document.activeElement !== sel) sel.value = t.ownerId || '';
+  }
   $('nameRow').hidden = $('imgRow').hidden = !edit;
   $('tSizeSeg').hidden = $('btnDup').hidden = $('btnDel').hidden = !rem;
   $('btnRotate').hidden = !edit || (t.size !== 2 && t.size !== 4) || !!t.art;   // art frames only fit one way up
@@ -977,7 +1091,8 @@ function updateRoster() {
       const b = document.createElement('button'); b.className = 'btn' + (t.id === ui.sel ? ' active' : '') + (t.hidden ? ' hid' : '');
       const dot = document.createElement('span'); dot.className = 'dot'; dot.style.setProperty('--c', sd.col);
       const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = t.name;
-      const sz = document.createElement('span'); sz.className = 'sz'; sz.textContent = (t.hidden ? 'hidden · ' : '') + 'Size ' + sizeLabel(t.size);
+      const sz = document.createElement('span'); sz.className = 'sz';
+      sz.textContent = (t.hidden ? 'hidden · ' : '') + (t.owner ? (t.mine ? 'you' : t.owner) + ' · ' : '') + 'Size ' + sizeLabel(t.size);
       b.append(dot, nm, sz);
       b.onclick = () => { ui.sel = t.id; centerOn(t); commitView(); };
       el.appendChild(b);
@@ -1005,8 +1120,11 @@ document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => addToken(
 $('xDown').onclick = () => setX(ui.X - 1);
 $('xUp').onclick = () => setX(ui.X + 1);
 $('tName').onfocus = () => pushUndo();
-$('tName').oninput = e => { const t = selected(); if (!t || !canMove(t)) return; t.name = e.target.value; updateRoster(); requestRender(); scheduleSave(); };
-$('tName').onchange = () => updateSelBox();
+$('tName').oninput = e => { const t = selected(); if (!t || !canMove(t)) return; t.name = e.target.value; updateRoster(); requestRender(); if (!net.online) scheduleSave(); };
+$('tName').onchange = () => commit();
+$('btnClaim').onclick = () => claimAction('claim');
+$('btnRelease').onclick = () => claimAction('release');
+$('ownSel').onchange = e => claimAction('assign', e.target.value || null);
 $('tHidden').onchange = e => setHidden(selected(), e.target.checked);
 $('newHidden').onchange = e => { ui.newHidden = e.target.checked; };
 $('btnRotate').onclick = () => editSelected(t => { t.rot = (t.rot + 1) % 6; });
@@ -1036,7 +1154,11 @@ $('btnRedo').onclick = redo;
 $('btnFit').onclick = fitView;
 $('btnClearMeasure').onclick = clearMeasure;
 $('btnSaveFile').onclick = saveToFile;
-$('btnMenu').onclick = async () => { await saveNow(); S = null; bgImg = null; showMenu(); };
+$('btnMenu').onclick = async () => {
+  await saveNow();
+  if (net.online) { ui.atMenu = true; showMenu(); return; }   // the battle keeps running for everyone else
+  S = null; bgImg = null; showMenu();
+};
 $('btnEditMap').onclick = editMap;
 function clearMeasure() { ui.ruler = null; ui.area = null; requestRender(); }
 
@@ -1061,7 +1183,7 @@ cv.addEventListener('pointerdown', e => {
     const t = h && tokenAt(h);
     if (!t) { if (ui.sel != null) { ui.sel = null; commitView(); } startPan(e); return; }
     if (!canMove(t)) {   // players can look at GM tokens but not move them
-      ui.sel = t.id; commitView(); toast(`${t.name} is run by the GM`); startPan(e); return;
+      ui.sel = t.id; commitView(); toast(whyLocked(t)); startPan(e); return;
     }
     // keep the token under the same part of the cursor while dragging
     ui.sel = t.id; ui.drag = { id: t.id, dq: h.q - t.q, dr: h.r - t.r, from: { q: t.q, r: t.r }, moved: false };
@@ -1131,6 +1253,7 @@ window.addEventListener('resize', requestRender);
 const typing = e => ['INPUT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'checkbox' && e.target.type !== 'range';
 window.addEventListener('keydown', e => {
   if (!$('gmDialog').hidden) { padKey(e); return; }
+  if (!$('joinDialog').hidden) { if (e.key === 'Escape') closeJoin(); return; }
   if (!$('artDialog').hidden) { if (e.key === 'Escape') $('artDialog').hidden = true; return; }
   if (!S || $('battle').style.display !== 'grid') return;
   if (typing(e)) { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); return; }
@@ -1178,15 +1301,22 @@ async function openFile(f) {
 }
 function showMenu() {
   menuShown = true; $('battle').style.display = 'none'; $('menu').style.display = 'flex';
-  Promise.all([store.get('battle'), store.get('autosave')]).then(([b, m]) => {
-    savedBattle = b && b.map ? b : null; makerMap = m;
+  // with the server, the running battle lives there (an older one may still be saved in this browser)
+  const running = net.online && net.battle;
+  Promise.all([running ? null : store.get('battle'), store.get('autosave')]).then(([b, m]) => {
+    savedBattle = running ? { running: true, map: { name: net.battle.name }, tokens: new Array(net.battle.tokens) } : b && b.map ? b : null;
+    makerMap = m;
     $('continueBox').hidden = !savedBattle;
-    if (savedBattle) $('continueInfo').textContent = `"${savedBattle.map.name}" · ${(savedBattle.tokens || []).length} tokens`;
+    if (savedBattle) $('continueInfo').textContent = `"${savedBattle.map.name}" · ${(savedBattle.tokens || []).length} tokens` + (running ? ' · running now' : '');
     $('makerBox').hidden = !m;
     if (m) $('makerInfo').textContent = `"${m.name}" · ${m.cols}×${m.rows} hexes`;
   }).catch(e => console.warn(e));
 }
-$('btnContinue').onclick = () => { if (savedBattle) setBattle(normalizeMap(savedBattle.map), savedBattle.tokens, savedBattle.nextId, savedBattle.log); };
+$('btnContinue').onclick = () => {
+  if (!savedBattle) return;
+  if (savedBattle.running) { showBattleView(); setTool(ui.tool); commitView(); requestAnimationFrame(fitView); return; }
+  setBattle(normalizeMap(savedBattle.map), savedBattle.tokens, savedBattle.nextId, savedBattle.log);
+};
 $('btnUseMaker').onclick = () => {
   if (!makerMap) return;
   if (savedBattle && savedBattle.tokens && savedBattle.tokens.length &&
@@ -1214,11 +1344,20 @@ async function editMap() {
   location.href = 'Map_maker.html?from=battle';
 }
 async function returnFromEditor() {
-  const [b, m] = await Promise.all([store.get('battle'), store.get('autosave')]);
-  if (!b || !m) { showMenu(); return; }
-  const map = normalizeMap(m), tokens = normalizeTokens(b.tokens);
-  if (sessionStorage.getItem('gmReturn')) { sessionStorage.removeItem('gmReturn'); setMode(true); }
-  setBattle(map, tokens, b.nextId, b.log);
+  if (net.online) {   // only the map changes; tokens and who plays them stay as they are on the server
+    const m = await store.get('autosave').catch(() => null);
+    if (!m || !ui.gm) return;
+    const map = normalizeMap(m), r = await api('map', { map }).catch(() => null);
+    if (!r || !r.ok) { toast("Couldn't update the map: " + ((r && r.error) || 'no answer from the server')); return; }
+    showMap(map); net.mapVersion = r.state.mapVersion; showBattleView(); setTool(ui.tool);
+    await handleState(r.state);
+  } else {
+    const [b, m] = await Promise.all([store.get('battle'), store.get('autosave')]);
+    if (!b || !m) { showMenu(); return; }
+    const map = normalizeMap(m), tokens = normalizeTokens(b.tokens);
+    if (sessionStorage.getItem('gmReturn')) { sessionStorage.removeItem('gmReturn'); setMode(true); }
+    setBattle(map, tokens, b.nextId, b.log);
+  }
   logEvent('The GM updated the map');
   // the map may have shrunk: pull stranded tokens back to the nearest spot that fits
   let moved = 0;
@@ -1320,6 +1459,133 @@ $('artSearch').oninput = renderArtGrid;
 $('artClose').onclick = () => { $('artDialog').hidden = true; };
 
 /* =========================================================================
+   SHARED BATTLE  (with Battlemap.py's server: every screen plays on the same battle)
+   ========================================================================= */
+function connect() {   // the live feed: the server sends this screen's view whenever anything changes
+  if (net.es) net.es.close();
+  const q = new URLSearchParams();
+  if (net.me) q.set('player', net.me.id);
+  if (net.gm) q.set('gm', net.gm);
+  const es = net.es = new EventSource('api/events?' + q);
+  es.onmessage = e => { setSaveStatus('Live ✓', 'ok'); handleState(JSON.parse(e.data)); };
+  es.onerror = () => setSaveStatus('Reconnecting to the server…', 'bad');
+}
+const refreshState = () => api('state').then(handleState).catch(() => {});
+// States are applied one at a time, newest first, and never while this screen's own changes are on their way
+function handleState(st) {
+  if (st && st.you && (!net.latest || st.boot !== net.latest.boot || st.version >= net.latest.version)) net.latest = st;
+  if (!net.applying && !net.pending) net.proc = processStates();
+  return net.proc || Promise.resolve();
+}
+async function processStates() {
+  net.applying = true;
+  try { while (net.latest && !net.pending) { const st = net.latest; net.latest = null; await applyState(st); } }
+  catch (e) { console.error(e); }
+  finally { net.applying = false; }
+}
+async function applyState(st) {
+  if (st.boot !== net.boot) { net.boot = st.boot; net.version = 0; net.mapVersion = null; }   // the server restarted
+  if (st.version < net.version) return;
+  const prevRole = net.role;
+  net.version = st.version; net.role = st.you.role; net.name = st.you.name; net.players = st.players || [];
+  if (net.gm && net.role !== 'gm') { net.gm = null; sessionStorage.removeItem('lhm_gm'); }       // unlock no longer valid
+  if (net.me && !st.you.name) { net.me = null; localStorage.removeItem('lhm_player'); }        // player no longer known
+  if ((net.role === 'gm') !== ui.gm) setMode(net.role === 'gm');
+  else if (net.role !== prevRole) { undoStack = []; redoStack = []; updateUndoBtns(); }
+  updateWho();
+  if (net.role === 'guest' && !net.asked) { net.asked = true; openJoin(); }
+  net.battle = st.battle ? { name: st.mapName, tokens: st.tokens.length } : null;
+  if (!st.battle) { S = null; net.synced = null; B = { tokens: [], nextId: 1, log: [] }; net.mapVersion = st.mapVersion; showMenu(); return; }
+  if (st.mapVersion !== net.mapVersion || !S) {
+    const m = await api('map').catch(() => null);
+    if (!m || !m.map) return;
+    showMap(normalizeMap(m.map)); net.mapVersion = m.mapVersion;
+  }
+  // the server's tokens win, except for what this screen is in the middle of (a drag, or typing a name)
+  const dragging = ui.drag && tokenById(ui.drag.id), dragAt = dragging && { q: dragging.q, r: dragging.r };
+  const typed = document.activeElement === $('tName') && selected() ? $('tName').value : null, typedId = ui.sel;
+  const order = new Map(B.tokens.map((t, i) => [t.id, i])), rank = t => order.has(t.id) ? order.get(t.id) : 1e9;
+  B = { tokens: normalizeTokens(st.tokens).sort((a, b) => rank(a) - rank(b)), nextId: st.nextId, log: normalizeLog(st.log) };
+  net.synced = tokenJson();
+  const active = new Set();
+  if (dragAt) { const t = tokenById(ui.drag.id); if (t) { Object.assign(t, dragAt); active.add(t.id); } else ui.drag = null; }
+  if (typed != null) { const t = tokenById(typedId); if (t && canMove(t)) { t.name = typed; active.add(t.id); } }
+  if (undoBase) {   // other screens' changes are not part of this screen's undo step
+    for (const t of B.tokens) if (!active.has(t.id)) undoBase.set(t.id, net.synced.get(t.id));
+    for (const id of [...undoBase.keys()]) if (!tokenById(id)) undoBase.delete(id);
+  }
+  if (ui.atMenu) showMenu();
+  else if (menuShown || $('battle').style.display !== 'grid') { showBattleView(); setTool(ui.tool); }
+  commitView();
+}
+// Send what this screen changed since the server's last state; the server checks each change
+async function pushChanges() {
+  clearTimeout(saveTimer);
+  if (!net.online || !net.synced || !S) return;
+  const add = [], update = [], here = new Set();
+  for (const t of B.tokens) {
+    here.add(t.id); const was = net.synced.get(t.id);
+    if (was == null) add.push(t); else if (was !== JSON.stringify(t)) update.push(t);
+  }
+  const remove = [...net.synced.keys()].filter(id => !here.has(id)), log = net.outLog.splice(0);
+  if (!add.length && !update.length && !remove.length && !log.length) return;
+  add.concat(update).forEach(t => net.synced.set(t.id, JSON.stringify(t))); remove.forEach(id => net.synced.delete(id));
+  net.pending++;
+  const r = await api('changes', { add, update, remove, log }).catch(() => null);
+  net.pending--;
+  if (!r || !r.state) { setSaveStatus("Couldn't reach the server – that change may be lost", 'bad'); refreshState(); return; }
+  if (r.idMap && Object.keys(r.idMap).length) remapIds(r.idMap);
+  if (r.rejected) toast(r.rejected === 1 ? "That change isn't allowed" : `${r.rejected} changes weren't allowed`);
+  await handleState(r.state);
+}
+// New tokens get their id from the server
+function remapIds(map) {
+  const fix = s => { if (s == null) return s; const t = JSON.parse(s); if (map[t.id]) t.id = map[t.id]; return JSON.stringify(t); };
+  for (const step of [...undoStack, ...redoStack]) for (const k of ['before', 'after']) {
+    const n = {}; for (const [id, v] of Object.entries(step[k])) n[map[id] || id] = fix(v); step[k] = n;
+  }
+  B.tokens.forEach(t => { if (map[t.id]) t.id = map[t.id]; });
+  if (map[ui.sel]) ui.sel = map[ui.sel];
+  if (ui.drag && map[ui.drag.id]) ui.drag.id = map[ui.drag.id];
+  if (ui.trail && map[ui.trail.id]) ui.trail.id = map[ui.trail.id];
+}
+async function claimAction(action, player) {
+  const t = selected(); if (!t) return;
+  await pushChanges();   // anything still on its way goes first
+  const r = await api('claim', { id: t.id, action, player }).catch(() => null);
+  if (!r) { toast("Can't reach the server"); return; }
+  if (!r.ok) toast(r.error || "That isn't allowed");
+  handleState(r.state);
+}
+
+// Joining as a player: the name is kept on this device, so a reload or a new tab is still you
+function updateWho() {
+  const b = $('btnWho'); b.hidden = !net.online;
+  b.textContent = net.me && net.name ? `👤 ${net.name}` : net.role === 'table' ? '👤 Table screen' : '👤 Join';
+}
+function openJoin() {
+  $('joinErr').textContent = ''; $('joinName').value = net.me ? net.name || '' : '';
+  $('joinLeave').hidden = !net.me; $('joinLeave').textContent = `Stop playing as ${net.name || 'this player'}`;
+  $('joinCancel').textContent = net.role === 'guest' ? 'Just watch' : 'Cancel';
+  $('joinNote').innerHTML = (net.role === 'table' && !net.me
+    ? 'This is the table screen: it moves every player and ally token. Only join with a name if this screen is one player\'s. '
+    : '') + 'Type your name, then click your mech and press <b>Claim</b>: only you and the GM can move it. Allies you deploy are yours straight away.';
+  $('joinDialog').hidden = false; $('joinName').focus();
+}
+function closeJoin() { $('joinDialog').hidden = true; }
+$('btnWho').onclick = openJoin;
+$('joinCancel').onclick = closeJoin;
+$('joinForm').onsubmit = async e => {
+  e.preventDefault();
+  const name = $('joinName').value.trim(); if (!name) { $('joinErr').textContent = 'Type a name'; return; }
+  const r = await api('join', { name, id: net.me && net.me.id }).catch(() => null);
+  if (!r || !r.ok) { $('joinErr').textContent = (r && r.error) || "Can't reach the server"; return; }
+  net.me = { id: r.id, name: r.name }; localStorage.setItem('lhm_player', JSON.stringify(net.me));
+  closeJoin(); connect(); refreshState(); toast(`Joined as ${r.name}`);
+};
+$('joinLeave').onclick = () => { net.me = null; localStorage.removeItem('lhm_player'); closeJoin(); connect(); refreshState(); };
+
+/* =========================================================================
    PLAYER VIEW / GM MODE
    ========================================================================= */
 function setMode(gm) {
@@ -1335,7 +1601,10 @@ function setMode(gm) {
 async function checkPasscode(code) {
   try {
     const r = await fetch('api/gm-unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: code }) });
-    return r.ok ? true : r.status === 403 ? 'Wrong pattern' : `The server couldn't check the pattern (error ${r.status}). Restart Battlemap.py.`;
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) { net.gm = d.token || null; if (net.gm) sessionStorage.setItem('lhm_gm', net.gm); return true; }
+    return r.status === 403 ? 'Wrong pattern' : r.status === 429 ? `Too many wrong tries – wait ${d.wait || 30} seconds`
+      : `The server couldn't check the pattern (error ${r.status}). Restart Battlemap.py.`;
   } catch (e) { return "Can't reach the server. Is Battlemap.py still running?"; }
 }
 
@@ -1401,17 +1670,26 @@ async function submitPattern() {
   pad.busy = true;
   const res = await checkPasscode(pad.seq.map(i => i + 1).join(''));
   pad.busy = false;
-  if (res === true) { closeGmDialog(); setMode(true); toast('GM mode – lock the screen before handing it back'); return; }
+  if (res === true) {
+    closeGmDialog(); setMode(true); toast('GM mode – lock the screen before handing it back');
+    if (net.online) { connect(); refreshState(); }   // now with the hidden tokens
+    return;
+  }
   $('gmErr').textContent = res; $('gmPad').classList.add('bad');
   setTimeout(() => { if ($('gmPad').classList.contains('bad')) { pad.seq = []; $('gmPad').classList.remove('bad'); drawPad(); } }, 900);
 }
 
 function openGmDialog() {
-  if (ui.gm) { setMode(false); toast('Locked – player view'); return; }
+  if (ui.gm) { lockGm(); return; }
   if (location.protocol === 'file:') { setMode(true); toast('Opened without Battlemap.py, so there is no passcode check'); return; }
   padReset(); $('gmDialog').hidden = false;
 }
 function closeGmDialog() { $('gmDialog').hidden = true; pad.down = false; }
+async function lockGm() {
+  if (net.online && net.gm) { await api('gm-lock', {}).catch(() => null); net.gm = null; sessionStorage.removeItem('lhm_gm'); }
+  setMode(false); toast('Locked – player view');
+  if (net.online) { connect(); refreshState(); }
+}
 $('btnGm').onclick = openGmDialog;
 $('btnMenuGm').onclick = openGmDialog;
 $('gmCancel').onclick = closeGmDialog;
@@ -1425,6 +1703,15 @@ setX(ui.X); setMode(false);
 const fromEditor = new URLSearchParams(location.search).get('from') === 'editor';
 history.replaceState(null, '', location.pathname);   // so a reload doesn't repeat the hand-over
 store.init().then(async () => {
+  if (net.online) {
+    document.body.classList.add('net'); updateWho();
+    const st = await api('state').catch(() => null);
+    if (!st || !st.you) { setSaveStatus("Can't reach the server – is Battlemap.py running?", 'bad'); showMenu(); return; }
+    connect();
+    await handleState(st);
+    if (fromEditor) await returnFromEditor();
+    return;
+  }
   if (fromEditor) { await returnFromEditor(); return; }
   const b = await store.get('battle').catch(() => null);
   if (b && b.map) setBattle(normalizeMap(b.map), b.tokens, b.nextId, b.log);

@@ -6,7 +6,7 @@ A simple hex battlemap builder for the Lancer TTRPG, plus a battlemap for playin
 
 Run `python Battlemap.py` to play, or `python Map_maker.py` to build maps. Each one starts a small local web server and opens the page in your browser. Keep the terminal window open while you use it.
 
-Running through the server lets both pages share saved data, which the battlemap's **Edit map** button needs. You can still open the `.html` files directly. Map and battle files work either way, but Edit map won't work reliably.
+Running through the server lets both pages share saved data, which the battlemap's **Edit map** button needs. It's also what lets several screens play on the same battle (see [Playing together](#playing-together)). You can still open the `.html` files directly. Map and battle files work either way, but Edit map won't work reliably and only that one screen can play.
 
 > Maps you autosaved before the server existed are still in the old copy that opens from disk. Open `Map_maker.html` directly and use **Save to file**, then open that file from the server version.
 
@@ -37,24 +37,36 @@ Running through the server lets both pages share saved data, which the battlemap
 
 ## Battlemap
 
-The battlemap always opens in the **player view**, on the last battle. That makes it suitable for a screen on the table that everyone uses. Click **🔒 GM** and draw the GM pattern on the 3×3 grid of dots to unlock everything. Drag through the dots like a phone's lock screen, or tap them in order and press **Unlock** (the keys `1`–`9` work too). **Lock to player view** before handing the screen back.
+The battlemap always opens in the **player view**, on the running battle. That makes it suitable for a screen on the table that everyone uses. Click **🔒 GM** and draw the GM pattern on the 3×3 grid of dots to unlock everything. Drag through the dots like a phone's lock screen, or tap them in order and press **Unlock** (the keys `1`–`9` work too). **Lock to player view** before handing the screen back.
 
-The pattern is printed in the terminal window when `Battlemap.py` starts. It's kept in `gm_passcode.txt` as the dots in the order you draw them, numbered like a phone keypad (`1 2 3` / `4 5 6` / `7 8 9`). For example, `14789` is down the left side and along the bottom. The file is created with a random 5-dot pattern the first time; edit it to change the pattern. The server never hands that file to the browser. The lock keeps players from using GM tools by accident, but it isn't real security: a player with the browser's developer tools could still get around it.
+The pattern is printed in the terminal window when `Battlemap.py` starts. It's kept in `gm_passcode.txt` as the dots in the order you draw them, numbered like a phone keypad (`1 2 3` / `4 5 6` / `7 8 9`). For example, `14789` is down the left side and along the bottom. The file is created with a random 5-dot pattern the first time; edit it to change the pattern. The server never hands that file to the browser. It checks every change against who made it, and hidden tokens are never sent to a screen that isn't in GM mode, so players can't peek at an ambush through the browser's developer tools. After 5 wrong patterns in a row, that device has to wait 30 seconds. The terminal window shows the pattern, so keep it out of sight. Opened straight from disk, without the server, there is no check at all.
 
-| | Player view | GM mode |
-| --- | --- | --- |
-| Move tokens | Player and ally tokens | All tokens |
-| Rename, set image, rotate | Player and ally tokens | All tokens |
-| Spawn, resize, delete, duplicate | Allies only (drones, turrets, deployables) | Everything |
-| Measure, Line / Cone / Blast / Burst | ✓ | ✓ |
-| Hostile and neutral tokens | Click to see what they are | Full control |
-| Hidden tokens | Not shown, not counted in hits, not in the log | Shown faded, marked HIDDEN |
-| Edit map, open/save battles, main menu, display settings | – | ✓ |
+### Playing together
+
+Players on the same Wi-Fi can join from their own laptop, tablet or phone: `Battlemap.py` prints a link like `http://192.168.1.23:8765/Battlemap.html` when it starts. They only need that link and a browser. The first time, Windows asks whether Python may accept connections; allow it on private networks.
+
+- Everyone sees the same battle, and every move shows up on all screens straight away
+- A player types their name when they open the link. Their device remembers it, so reloading the page or opening a new tab keeps them in. **👤** in the top bar changes the name, or stops playing on that device
+- To take a mech, a player clicks it and presses **Claim**. Only they and the GM can then move it. Allies they deploy are theirs straight away. **Release** gives a token back. In GM mode, the selected token's dropdown gives it to any player
+- The screen on the computer running `Battlemap.py` is the **table screen**: without a name, it moves every player and ally token, for players sitting at the table. Other devices can watch without a name, but have to join to move anything
+- The GM unlocks on any screen with the pattern. Each screen has its own mode, so players stay in the player view on theirs
+- The battle is kept by the server in `battle_state.json` (git-ignored), so it survives restarting `Battlemap.py`
+- Only use this on a network you trust, like your home Wi-Fi: anyone on the same network can open the link
+
+| | Table screen | Player (joined by name) | GM mode |
+| --- | --- | --- | --- |
+| Move, rename, set image, rotate | Player and ally tokens | The tokens they have claimed | All tokens |
+| Claim and release | – | Claim free player and ally tokens; release their own | Give any player or ally token to a player, or free it |
+| Spawn, resize, delete, duplicate | Allies only (drones, turrets, deployables) | Allies, which are theirs | Everything |
+| Measure, Line / Cone / Blast / Burst | ✓ | ✓ | ✓ |
+| Hostile and neutral tokens | Click to see what they are | Click to see what they are | Full control |
+| Hidden tokens | Never sent to this screen | Never sent to this screen | Shown faded, marked HIDDEN |
+| Edit map, open/save battles, main menu, display settings | – | – | ✓ |
 
 - **Hiding**: tick "Hidden from players" on a selected token (or press `H`), or tick "New tokens start hidden" before placing an ambush. Untick it to reveal the token
 - **Recent** (top right of the map) lists moves, deployments and reveals, so the table can follow what happened. Entries about hidden tokens only appear in GM mode
 - The last move leaves a fading trail on the map
-- Undo only goes back through changes made in the current mode, so players can't undo the GM's setup
+- Undo only takes back changes made on this screen in its current mode, never another screen's, so players can't undo the GM's setup or each other's moves
 
 - Load the map that's open in the Map Maker, a `.hexmap.json` file, or a saved `.battle.json` (map and tokens together). You can also drop the file onto the page
 - Tokens for players, allies, hostiles and neutrals, in Lancer sizes ½, 1, 2, 3 and 4. Tokens snap to the hexes, can show a picture and can be renamed, duplicated and deleted

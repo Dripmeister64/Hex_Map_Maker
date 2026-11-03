@@ -1,5 +1,8 @@
 __pycache__/
 gm_passcode.txt
+# the running battle, kept by the server between restarts
+battle_state.json
+battle_state.tmp
 # purchased token art: used locally by the battlemap, never committed.
 # The folder itself is kept (through .gitkeep) so it's there to drop art into.
 Tokens/*
