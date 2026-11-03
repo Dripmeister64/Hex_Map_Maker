@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lancer Battlemap</title>
+<style>
+:root{
+  --bg:#0d1015; --panel:#151a21; --panel2:#1c232d; --line:#2a3340; --text:#d8dfe8;
+  --muted:#8693a3; --accent:#ff6b3d; --accent2:#4fd1ff;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:"Segoe UI",system-ui,sans-serif;font-size:14px;overflow:hidden}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:.06em}
+.muted{color:var(--muted);font-size:12px}
+kbd{font-family:Consolas,monospace;font-size:11px;color:var(--muted);border:1px solid var(--line);
+  border-radius:3px;padding:0 4px;margin-left:auto}
+input[type=text],input:not([type]){background:#0f1319;color:var(--text);
+  border:1px solid var(--line);border-radius:5px;padding:7px 9px;font:inherit;width:100%}
+input:focus{outline:none;border-color:var(--accent2)}
+input[type=range]{width:100%;accent-color:var(--accent2)}
+input[type=checkbox]{accent-color:var(--accent2)}
+.btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;
+  padding:7px 12px;cursor:pointer;font:inherit;white-space:nowrap}
+.btn:hover{border-color:#41506a;background:#232c39}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#170d08;font-weight:600}
+.btn.primary:hover{background:#ff8458}
+.btn.danger:hover{border-color:#c0392b;background:#3a1a17}
+.btn.small{padding:4px 9px;font-size:12px}
+
+/* ---------- MENU ---------- */
+#menu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at 30% 20%,#1b2633 0%,#0d1015 60%);overflow:auto;padding:20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:28px 30px;width:480px;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);position:relative}
+.card::before{content:"";position:absolute;left:0;top:0;right:0;height:3px;border-radius:12px 12px 0 0;
+  background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.brand{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.logo{font-size:38px;color:var(--accent);line-height:1}
+.brand h1{font-size:22px}
+.brand .sub{color:var(--muted);font-size:12px;letter-spacing:.15em;text-transform:uppercase}
+.continue{display:flex;align-items:center;gap:12px;justify-content:space-between;background:#1a2430;
+  border:1px solid #2c4256;border-radius:8px;padding:12px 14px;margin-bottom:10px}
+.actions{display:flex;justify-content:space-between;gap:10px;margin-top:22px}
+#dropHint{margin-top:14px;text-align:center}
+
+/* ---------- BATTLE ---------- */
+#battle{position:fixed;inset:0;display:none;grid-template-columns:260px 1fr;grid-template-rows:50px 1fr 28px;
+  grid-template-areas:"top top" "side stage" "status status"}
+#topbar{grid-area:top;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--panel);
+  border-bottom:1px solid var(--line)}
+#topbar .logo{font-size:26px}
+#bName{font-weight:600;font-size:15px;padding:0 8px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grow{flex:1}
+.sep{width:1px;height:24px;background:var(--line);margin:0 4px}
+#sidebar{grid-area:side;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;overflow-x:hidden;padding:6px 12px 20px}
+#sidebar section{padding:12px 0;border-bottom:1px solid var(--line)}
+#sidebar section:last-child{border-bottom:none}
+#sidebar h3{font-size:11px;color:var(--accent2);text-transform:uppercase;letter-spacing:.18em;margin-bottom:10px}
+#sidebar label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+#sidebar label.chk{display:flex;align-items:center;gap:7px;color:var(--text);font-size:13px}
+.tools{display:grid;gap:5px}
+.tool{display:flex;align-items:center;gap:9px;text-align:left}
+.tool .ic{width:16px;text-align:center;color:var(--accent)}
+.tool.active,.seg button.active{border-color:var(--accent2);background:#18293a;box-shadow:inset 0 0 0 1px var(--accent2)}
+.seg{display:flex;gap:4px;margin-top:8px;align-items:center}
+.seg>span{font-size:12px;color:var(--muted);margin-right:4px;min-width:30px}
+.seg button{flex:1;padding-left:4px;padding-right:4px}
+#xVal{min-width:34px;text-align:center;font-family:Consolas,monospace;font-size:15px;font-weight:600}
+.addgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:rgb(var(--c));margin-right:6px;flex:none}
+.btnrow{display:flex;gap:6px;margin-top:8px}.btnrow>*{flex:1}
+.hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45}
+#roster{display:grid;gap:3px}
+#roster button{display:flex;align-items:center;text-align:left;padding:5px 8px;font-size:13px;overflow:hidden}
+#roster button.active{border-color:var(--accent2);background:#18293a}
+#roster .nm{flex:1;overflow:hidden;text-overflow:ellipsis}
+#roster .sz{color:var(--muted);font-size:11px;margin-left:6px}
+#stage{grid-area:stage;position:relative;overflow:hidden;
+  background:#0a0d11 repeating-linear-gradient(0deg,transparent 0 39px,#10151b 39px 40px),
+             repeating-linear-gradient(90deg,transparent 0 39px,#10151b 39px 40px)}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:default;touch-action:none}
+#info{position:absolute;left:12px;bottom:12px;max-width:460px;background:rgba(21,26,33,.94);border:1px solid #33506a;
+  border-radius:8px;padding:9px 13px;font-size:13px;line-height:1.5;pointer-events:none}
+#info b{color:var(--accent)}
+#info .warn{color:#ffb35c}
+#status{grid-area:status;display:flex;align-items:center;gap:18px;padding:0 12px;background:var(--panel);
+  border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+#stSave.ok{color:#6fd18a}#stSave.bad{color:#ff6b6b}
+#toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:#1e2a36;border:1px solid #33506a;
+  padding:8px 16px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ====================== MENU ====================== -->
+<div id="menu">
+  <div class="card">
+    <div class="brand">
+      <span class="logo">⬡</span>
+      <div><h1>BATTLEMAP</h1><div class="sub">Play your hex maps — Lancer rules</div></div>
+    </div>
+
+    <div id="continueBox" class="continue" hidden>
+      <div><b>Continue last battle</b><div id="continueInfo" class="muted"></div></div>
+      <button class="btn primary" id="btnContinue">Continue</button>
+    </div>
+    <div id="makerBox" class="continue" hidden>
+      <div><b>Use map from the Map Maker</b><div id="makerInfo" class="muted"></div></div>
+      <button class="btn" id="btnUseMaker">Start battle</button>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="btnLoadFile">Open map or battle file…</button>
+      <a class="btn" href="Map_maker.html" style="text-decoration:none">Map Maker ▸</a>
+    </div>
+    <div id="dropHint" class="muted">You can also drop a <code>.hexmap.json</code> or <code>.battle.json</code> file here.</div>
+  </div>
+</div>
+
+<!-- ====================== BATTLE ====================== -->
+<div id="battle">
+  <header id="topbar">
+    <span class="logo">⬡</span>
+    <span id="bName"></span>
+    <div class="sep"></div>
+    <button class="btn" id="btnUndo" title="Ctrl+Z">↶ Undo</button>
+    <button class="btn" id="btnRedo" title="Ctrl+Y">↷ Redo</button>
+    <button class="btn" id="btnFit" title="F">⤢ Fit view</button>
+    <button class="btn" id="btnEditMap" title="Add or change cover and obstacles; your tokens stay put">✎ Edit map</button>
+    <div class="grow"></div>
+    <button class="btn" id="btnClearMeasure" title="Esc">Clear measurement</button>
+    <button class="btn" id="btnSaveFile" title="Ctrl+S">Save battle to file</button>
+    <button class="btn" id="btnMenu">Main menu</button>
+  </header>
+
+  <aside id="sidebar">
+    <section>
+      <h3>Tools</h3>
+      <div class="tools">
+        <button class="btn tool" data-tool="move"><span class="ic">✥</span>Move tokens<kbd>1</kbd></button>
+        <button class="btn tool" data-tool="line"><span class="ic">━</span>Line<kbd>2</kbd></button>
+        <button class="btn tool" data-tool="cone"><span class="ic">◣</span>Cone<kbd>3</kbd></button>
+        <button class="btn tool" data-tool="blast"><span class="ic">✺</span>Blast<kbd>4</kbd></button>
+        <button class="btn tool" data-tool="burst"><span class="ic">◎</span>Burst<kbd>5</kbd></button>
+      </div>
+      <div class="seg">
+        <span>Size</span>
+        <button class="btn small" id="xDown" title="[">−</button>
+        <span id="xVal">3</span>
+        <button class="btn small" id="xUp" title="]">+</button>
+      </div>
+      <div class="hint" id="toolHint"></div>
+      <div class="hint"><b>Right-drag</b> anywhere to measure range.</div>
+    </section>
+
+    <section>
+      <h3>Add token</h3>
+      <div class="addgrid">
+        <button class="btn small" data-add="pc"><span class="dot" style="--c:79,209,255"></span>Player</button>
+        <button class="btn small" data-add="ally"><span class="dot" style="--c:111,209,138"></span>Ally</button>
+        <button class="btn small" data-add="hostile"><span class="dot" style="--c:255,90,74"></span>Hostile</button>
+        <button class="btn small" data-add="neutral"><span class="dot" style="--c:214,190,92"></span>Neutral</button>
+      </div>
+      <div class="seg" id="newSizeSeg"><span>Size</span></div>
+    </section>
+
+    <section id="selBox" hidden>
+      <h3>Selected token</h3>
+      <label>Name</label><input id="tName" maxlength="40">
+      <div class="seg" id="tSideSeg"><span>Side</span></div>
+      <div class="seg" id="tSizeSeg"><span>Size</span></div>
+      <div class="btnrow">
+        <button class="btn small" id="btnImg">Image…</button>
+        <button class="btn small" id="btnImgRemove">No image</button>
+      </div>
+      <div class="btnrow">
+        <button class="btn small" id="btnRotate" title="R">⟳ Rotate</button>
+        <button class="btn small" id="btnDup" title="Ctrl+D">Duplicate</button>
+        <button class="btn small danger" id="btnDel" title="Delete">Delete</button>
+      </div>
+    </section>
+
+    <section>
+      <h3>Tokens</h3>
+      <div id="roster"></div>
+      <div class="muted" id="rosterEmpty">No tokens yet. Add one above, then drag it into place.</div>
+    </section>
+
+    <section>
+      <h3>Display</h3>
+      <label class="chk"><input type="checkbox" id="showNames" checked> Show token names</label>
+      <label class="chk"><input type="checkbox" id="hardBlocks" checked> Hard cover blocks movement</label>
+      <label class="chk"><input type="checkbox" id="showGrid" checked> Show grid lines</label>
+      <label>Grid line opacity</label><input type="range" id="gridOp" min="0.05" max="1" step="0.05">
+    </section>
+  </aside>
+
+  <main id="stage"><canvas id="cv"></canvas><div id="info" hidden></div><div id="toast"></div></main>
+
+  <footer id="status">
+    <span id="stHex">Hex —</span>
+    <span class="grow"></span>
+    <span>Right-drag: measure · Drag empty space / middle-drag: pan · Wheel: zoom · [ ]: area size · Esc: clear</span>
+    <span id="stSave"></span>
+  </footer>
+</div>
+
+<input type="file" id="fileMap" accept=".json,application/json" hidden>
+<input type="file" id="fileImg" accept="image/*" hidden>
+
+<script src="hexmap_core.js"></script>
+<script>
+"use strict";
+let S = null;            // the map being played on (same format as the Map Maker's)
+let bgImg = null;        // decoded background image
+let B = { tokens: [], nextId: 1 };   // everything placed on top of the map
+const view = { scale: 1, ox: 0, oy: 0 };
+const ui = { tool:'move', X:3, newSize:1, sel:null, hover:null, space:false, panning:false, last:null,
+             drag:null, ruler:null, area:null, showNames:true, hardBlocks:true };
+let undoStack = [], redoStack = [];
+const $ = id => document.getElementById(id);
+
+/* =========================================================================
+   TOKENS & LANCER RULES
+   ========================================================================= */
+const SIDES = {
+  pc:      { label:'Player',  col:'79,209,255'  },
+  ally:    { label:'Ally',    col:'111,209,138' },
+  hostile: { label:'Hostile', col:'255,90,74'   },
+  neutral: { label:'Neutral', col:'214,190,92'  },
+};
+const SIZES = [0.5, 1, 2, 3, 4];
+const sizeLabel = s => s === 0.5 ? '½' : String(s);
+// Hex footprints by Size: odd sizes centre on a hex, even sizes on the corner where three hexes meet
+const TRI = [[0,0],[1,0],[0,1]];
+const TOKEN_FP = {
+  0.5: [[0,0]], 1: [[0,0]], 2: TRI, 3: FLOWER,
+  4: [...new Set(TRI.flatMap(([q, r]) => brushCells({ q, r }, 1).map(c => c.q + ',' + c.r)))].map(k => k.split(',').map(Number)),
+};
+const DISC = { 0.5: 0.5, 1: 0.8, 2: 1.2, 3: 1.7, 4: 2.15 };   // token disc radius, in hex radii
+const TOOL_HINTS = {
+  move:  'Drag tokens to move them; they snap to the hexes. The cheapest route and its movement cost are shown. Drag empty space to pan.',
+  line:  'Line X: press on a token (or hex) and drag to aim. X hexes long, 1 wide.',
+  cone:  'Cone X: press on a token and drag to aim. X hexes long, X wide at the far end.',
+  blast: 'Blast X: press on the attacker and drag to the target hex. Shows the range to the centre.',
+  burst: 'Burst X: click a token. Every hex within X of its space, not its own space.',
+};
+
+const hd = (a, b) => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q + a.r - b.q - b.r)) / 2;
+const hkey = c => c.q + ',' + c.r;
+const cellAt = (q, r) => { const p = axToPx(q, r); return { q, r, x: p.x, y: p.y }; };
+function tokenCells(t) {
+  return TOKEN_FP[t.size].map(([dq, dr]) => { const [a, b] = rotAx(dq, dr, t.rot); return cellAt(t.q + a, t.r + b); });
+}
+const tokenById = id => B.tokens.find(t => t.id === id) || null;
+function tokenAt(h) {
+  for (let i = B.tokens.length - 1; i >= 0; i--)
+    if (tokenCells(B.tokens[i]).some(c => c.q === h.q && c.r === h.r)) return B.tokens[i];
+  return null;
+}
+const fits = cells => cells.every(c => inB(c.q, c.r));
+
+// An "origin" is a token (follows it if it moves) or a single hex
+function originAt(h) { const t = tokenAt(h); return t ? { token: t.id } : { q: h.q, r: h.r }; }
+function originCells(o) {
+  if (!o) return null;
+  if (o.token != null) { const t = tokenById(o.token); return t ? tokenCells(t) : null; }
+  return [cellAt(o.q, o.r)];
+}
+const originName = o => o && o.token != null ? (tokenById(o.token) || {}).name : null;
+
+// Range in Lancer is counted from the edge of one space to the edge of the other
+function setDist(A, Bc) {
+  let best = { d: Infinity, a: null, b: null };
+  for (const a of A) for (const b of Bc) { const d = hd(a, b); if (d < best.d) best = { d, a, b }; }
+  return best;
+}
+function hexLine(a, b) {
+  const n = hd(a, b), out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = n ? i / n : 0;
+    out.push(axRound(a.q + (b.q - a.q)*t + 1e-6, a.r + (b.r - a.r)*t + 1e-6));
+  }
+  return out;
+}
+function pxFrac(x, y) { const px = x - HEX*SQRT3/2, py = y - HEX; return { q: (px/SQRT3 - py/3) / HEX, r: (2/3 * py) / HEX }; }
+
+// Line X: X hexes in a straight line, leaving from the side of the space facing the target
+function lineArea(F, P, X) {
+  const c = centroid(F); let dx = P.x - c.x, dy = P.y - c.y; const L = Math.hypot(dx, dy);
+  if (L < HEX*0.3) return [];
+  dx /= L; dy /= L;
+  let s = F[0], best = -Infinity;
+  for (const h of F) { const v = (h.x - c.x)*dx + (h.y - c.y)*dy; if (v > best + 1e-6) { best = v; s = h; } }
+  const f0 = pxFrac(s.x, s.y), f1 = pxFrac(s.x + dx, s.y + dy), dq = f1.q - f0.q, dr = f1.r - f0.r;
+  const k = (X + 1) / ((Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2);
+  const inF = new Set(F.map(hkey)), out = [];
+  for (const h of hexLine(s, axRound(s.q + dq*k, s.r + dr*k))) {
+    if (inF.has(hkey(h))) continue;
+    out.push(cellAt(h.q, h.r)); if (out.length === X) break;
+  }
+  return out;
+}
+// Cone X: a triangle of hexes, 1 wide next to the space and X wide X hexes out.
+// Every triangle that touches the space without overlapping it is a candidate; the one pointing
+// closest to the cursor wins.
+function coneArea(F, P, X) {
+  const c = centroid(F), want = Math.atan2(P.y - c.y, P.x - c.x);
+  if (Math.hypot(P.x - c.x, P.y - c.y) < HEX*0.3) return [];
+  const inF = new Set(F.map(hkey)), apexes = new Map();
+  for (const h of F) for (const [dq, dr] of DIRS) { const n = { q: h.q + dq, r: h.r + dr }; if (!inF.has(hkey(n))) apexes.set(hkey(n), n); }
+  let best = [], bestDiff = Infinity;
+  for (const A of apexes.values()) for (let d = 0; d < 6; d++) {
+    const D1 = DIRS[d], D2 = DIRS[(d + 1) % 6], cells = []; let ok = true;
+    for (let a = 0; a < X && ok; a++) for (let b = 0; a + b < X; b++) {
+      const q = A.q + a*D1[0] + b*D2[0], r = A.r + a*D1[1] + b*D2[1];
+      if (inF.has(q + ',' + r)) { ok = false; break; }
+      cells.push(cellAt(q, r));
+    }
+    if (!ok) continue;
+    const m = centroid(cells); let diff = Math.abs(Math.atan2(m.y - c.y, m.x - c.x) - want);
+    if (diff > Math.PI) diff = TAU - diff;
+    if (diff < bestDiff - 1e-9) { bestDiff = diff; best = cells; }
+  }
+  return best;
+}
+// Burst X: every hex within X of the space, not counting the space itself
+function burstArea(F, X) {
+  const inF = new Set(F.map(hkey)), out = new Map();
+  for (const h of F) for (const c of brushCells(h, X)) { const k = hkey(c); if (!inF.has(k)) out.set(k, cellAt(c.q, c.r)); }
+  return [...out.values()];
+}
+
+// Movement: each step costs 1, or 2 if any hex the token steps into is difficult terrain or any part
+// of it crosses a climb. The two don't stack. Returns the cheapest route, or null if there is none.
+function stepInfo(cells, dq, dr) {
+  const own = new Set(cells.map(hkey)), to = cells.map(c => ({ q: c.q + dq, r: c.r + dr }));
+  const difficult = to.some(c => !own.has(hkey(c)) && S.effects[keyOf(c.q, c.r)] === 'difficult');
+  const climb = cells.some((c, i) => S.edges[edgeKey(c, to[i])] === 'climb');
+  return { cost: difficult || climb ? 2 : 1, difficult, climb };
+}
+let pathMemo = { key: null, val: null };
+function moveRules(t, from, to) {
+  const fp = TOKEN_FP[t.size].map(([dq, dr]) => rotAx(dq, dr, t.rot));
+  const cellsAt = (q, r) => fp.map(([a, b]) => ({ q: q + a, r: r + b }));
+  // hard cover blocks the way, except under the start and end positions (e.g. standing on a roof)
+  const own = new Set([...cellsAt(from.q, from.r), ...cellsAt(to.q, to.r)].map(hkey)), openMemo = new Map();
+  const open = (q, r) => {
+    const k = q + ',' + r; let v = openMemo.get(k);
+    if (v === undefined) openMemo.set(k, v = cellsAt(q, r).every(c => inB(c.q, c.r) &&
+      (own.has(hkey(c)) || !ui.hardBlocks || S.cells[keyOf(c.q, c.r)] !== 'hard')));
+    return v;
+  };
+  // the route as a list of token positions, with what each step cost
+  const result = path => {
+    const steps = path.slice(1).map((n, i) => ({ ...stepInfo(cellsAt(path[i].q, path[i].r), n.q - path[i].q, n.r - path[i].r), q: n.q, r: n.r }));
+    const cost = steps.reduce((a, st) => a + st.cost, 0);
+    return { cost, hexes: steps.length, extra: cost - steps.length, path, steps, fp };
+  };
+  return { cellsAt, open, result };
+}
+function movePath(t, from, to) {
+  const key = [t.size, t.rot, from.q, from.r, to.q, to.r, ui.hardBlocks].join();
+  if (pathMemo.key === key) return pathMemo.val;
+  const { cellsAt, open, result } = moveRules(t, from, to);
+  let val = null;
+  const dist = new Map([[hkey(from), 0]]), prev = new Map(), buckets = [[from]];   // costs are 1 or 2: bucket queue
+  search: for (let d = 0; d < buckets.length; d++) for (const p of buckets[d] || []) {
+    if (dist.get(hkey(p)) !== d) continue;
+    if (p.q === to.q && p.r === to.r) {
+      const path = [p]; for (let k = hkey(p); prev.has(k); k = hkey(path[0])) path.unshift(prev.get(k));
+      val = result(path);
+      break search;
+    }
+    const here = cellsAt(p.q, p.r);
+    for (const [dq, dr] of DIRS) {
+      const n = { q: p.q + dq, r: p.r + dr }, nk = hkey(n);
+      if (!open(n.q, n.r)) continue;
+      const nd = d + stepInfo(here, dq, dr).cost;
+      if (dist.has(nk) && dist.get(nk) <= nd) continue;
+      dist.set(nk, nd); prev.set(nk, p); (buckets[nd] = buckets[nd] || []).push(n);
+    }
+  }
+  pathMemo = { key, val };
+  return val;
+}
+// Moving along the measured straight line instead; null if hard cover is in the way
+function straightPath(t, from, to) {
+  const { open, result } = moveRules(t, from, to), path = hexLine(from, to);
+  return path.slice(1).every(p => open(p.q, p.r)) ? result(path) : null;
+}
+const moveText = m => m ? `Move ${m.cost}` + (m.extra ? ` (${m.hexes} + ${m.extra} extra)` : '') : 'No clear path';
+function moveDetail(m) {
+  if (!m || !m.extra) return '';
+  const d = m.steps.filter(s => s.difficult).length, c = m.steps.filter(s => s.climb).length;
+  return [d && `${d} into difficult terrain`, c && `${c} climb${c > 1 ? 's' : ''}`].filter(Boolean).join(', ');
+}
+function drawMovePath(ctx, m, col, marksOnly) {
+  if (!m || m.path.length < 2) return;
+  const mid = p => centroid(m.fp.map(([a, b]) => cellAt(p.q + a, p.r + b)));
+  if (!marksOnly) {
+    ctx.beginPath(); m.path.forEach((p, i) => { const c = mid(p); i ? ctx.lineTo(c.x, c.y) : ctx.moveTo(c.x, c.y); });
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.setLineDash([HEX*0.06, HEX*0.16]);
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = HEX*0.14; ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = HEX*0.08; ctx.stroke(); ctx.setLineDash([]);
+  }
+  m.steps.forEach(s => { if (s.cost > 1) { const c = mid(s); pill(ctx, c.x, c.y, '+1', HEX*0.28, `rgb(${EFFECTS.difficult.col})`, 'rgba(60,38,12,0.9)'); } });
+}
+
+// The current area template: which hexes it covers and who it hits
+function computeArea() {
+  const A = ui.area; if (!A) return null;
+  const F = originCells(A.origin);
+  let cells = [], range = null, center = null;
+  if (A.kind === 'blast') {
+    center = pxToAx(A.P.x, A.P.y);
+    cells = brushCells(center, A.X).map(c => cellAt(c.q, c.r));
+    if (F && A.origin.token != null) range = setDist(F, [center]).d;
+  } else {
+    if (!F) return null;
+    cells = A.kind === 'line' ? lineArea(F, A.P, A.X) : A.kind === 'cone' ? coneArea(F, A.P, A.X) : burstArea(F, A.X);
+  }
+  cells = cells.filter(c => inB(c.q, c.r));
+  const set = new Set(cells.map(hkey)), self = A.kind !== 'blast' && A.origin ? A.origin.token : null;
+  const hits = B.tokens.filter(t => t.id !== self && tokenCells(t).some(c => set.has(hkey(c))));
+  return { kind: A.kind, X: A.X, cells, set, hits, range, center, origin: F };
+}
+function computeRuler() {
+  const R = ui.ruler; if (!R || !R.to) return null;
+  const Fa = originCells(R.from), Fb = originCells(R.to); if (!Fa || !Fb) return null;
+  const { d, a, b } = setDist(Fa, Fb);
+  const skip = new Set([...Fa, ...Fb].map(hkey));
+  const path = hexLine(a, b).slice(1).map(h => cellAt(h.q, h.r));
+  const cover = { light: 0, hard: 0 };
+  path.forEach(c => { if (skip.has(hkey(c))) return; const v = S.cells[keyOf(c.q, c.r)]; if (v) cover[v]++; });
+  // movement: the token (or a Size 1 mover) shifted so the hex the ruler started on lands on its end
+  const t = R.from.token != null ? tokenById(R.from.token) : { size: 1, rot: 0, q: R.startHex.q, r: R.startHex.r };
+  const end = { q: t.q + R.toHex.q - R.startHex.q, r: t.r + R.toHex.r - R.startHex.r };
+  const straight = straightPath(t, t, end), best = movePath(t, t, end);
+  // only offer another route when it is actually cheaper than going straight
+  const detour = !!best && (!straight || best.cost < straight.cost);
+  return { d, a, b, path, cover, move: detour ? best : straight, detour, straight, from: originName(R.from), to: originName(R.to) };
+}
+
+/* =========================================================================
+   RENDERING
+   ========================================================================= */
+const cv = $('cv'), ctx = cv.getContext('2d');
+const imgCache = new Map();
+function tokenImg(src) {
+  if (!src) return null;
+  let im = imgCache.get(src);
+  if (!im) { im = new Image(); im.onload = requestRender; im.src = src; imgCache.set(src, im); }
+  return im.complete && im.naturalWidth ? im : null;
+}
+function initials(name) {
+  const w = String(name || '?').trim().split(/\s+/).filter(Boolean);
+  if (!w.length) return '?';
+  if (w.length > 1 && /^\d+$/.test(w[w.length - 1])) return (w[0][0] + w[w.length - 1]).toUpperCase().slice(0, 3);
+  return (w.length > 1 ? w[0][0] + w[1][0] : w[0].slice(0, 2)).toUpperCase();
+}
+function pill(ctx, x, y, text, size, col, bg) {
+  ctx.font = `600 ${size}px "Segoe UI",system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const w = ctx.measureText(text).width + size*0.9, h = size*1.5;
+  rr(ctx, x - w/2, y - h/2, w, h, h/2); ctx.fillStyle = bg || 'rgba(12,16,22,0.88)'; ctx.fill();
+  ctx.strokeStyle = col; ctx.lineWidth = size*0.1; ctx.stroke();
+  ctx.fillStyle = '#eef3f8'; ctx.fillText(text, x, y + size*0.04);
+}
+
+function drawToken(ctx, t, lw, hit) {
+  const cells = tokenCells(t), col = SIDES[t.side].col, m = centroid(cells), R = DISC[t.size]*HEX;
+  if (cells.length > 1) {
+    footprintPath(ctx, cells, HEX); ctx.fillStyle = `rgba(${col},0.16)`; ctx.fill();
+    strokeEdges(ctx, outerEdges(cells, HEX), HEX*0.07, `rgba(${col},0.75)`);
+  }
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.65)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+  circle(ctx, m.x, m.y, R); ctx.fillStyle = '#121820'; ctx.fill(); ctx.restore();
+  const im = tokenImg(t.img);
+  if (im) { ctx.save(); circle(ctx, m.x, m.y, R); ctx.clip(); ctx.drawImage(im, m.x - R, m.y - R, R*2, R*2); ctx.restore(); }
+  else {
+    const g = ctx.createRadialGradient(m.x, m.y - R*0.4, R*0.1, m.x, m.y, R);
+    g.addColorStop(0, `rgba(${col},0.55)`); g.addColorStop(1, `rgba(${col},0.18)`);
+    circle(ctx, m.x, m.y, R); ctx.fillStyle = g; ctx.fill();
+    const txt = initials(t.name);
+    ctx.font = `700 ${R*(txt.length > 2 ? 0.62 : 0.78)}px "Segoe UI",system-ui,sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#f4f8fc'; ctx.fillText(txt, m.x, m.y + R*0.04);
+  }
+  circle(ctx, m.x, m.y, R); ctx.strokeStyle = `rgb(${col})`; ctx.lineWidth = Math.max(R*0.12, HEX*0.07); ctx.stroke();
+  if (hit) { circle(ctx, m.x, m.y, R + HEX*0.12); ctx.strokeStyle = '#ff6b3d'; ctx.lineWidth = HEX*0.1; ctx.stroke(); }
+  if (ui.sel === t.id) {
+    circle(ctx, m.x, m.y, R + HEX*(hit ? 0.27 : 0.15)); ctx.setLineDash([HEX*0.18, HEX*0.12]);
+    ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = Math.max(lw*2.5, HEX*0.05); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (ui.showNames && t.name) pill(ctx, m.x, m.y + R + HEX*0.22, t.name, HEX*0.26, `rgba(${col},0.9)`);
+}
+
+function drawArea(ctx, lw, A) {
+  if (!A || !A.cells.length && !A.origin) return;
+  if (A.cells.length) {
+    footprintPath(ctx, A.cells, HEX); ctx.fillStyle = 'rgba(255,107,61,0.3)'; ctx.fill();
+    strokeEdges(ctx, outerEdges(A.cells, HEX), HEX*0.07, '#ff6b3d');
+  }
+  if (A.origin) { ctx.setLineDash([HEX*0.15, HEX*0.1]); strokeEdges(ctx, outerEdges(A.origin, HEX), HEX*0.06, '#4fd1ff'); ctx.setLineDash([]); }
+  if (A.kind === 'blast' && A.center) {
+    const p = axToPx(A.center.q, A.center.r);
+    ctx.beginPath(); ctx.moveTo(p.x - HEX*0.3, p.y); ctx.lineTo(p.x + HEX*0.3, p.y); ctx.moveTo(p.x, p.y - HEX*0.3); ctx.lineTo(p.x, p.y + HEX*0.3);
+    ctx.strokeStyle = '#ffd2c2'; ctx.lineWidth = HEX*0.06; ctx.stroke();
+    if (A.origin && A.range != null) {
+      const c = centroid(A.origin); ctx.setLineDash([HEX*0.2, HEX*0.15]);
+      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(p.x, p.y); ctx.strokeStyle = 'rgba(255,210,194,0.7)'; ctx.lineWidth = HEX*0.04; ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+}
+
+function drawRuler(ctx, lw, M, labels) {
+  if (!M) return;
+  const tint = c => { const v = S.cells[keyOf(c.q, c.r)]; return v === 'hard' ? 'rgba(255,90,74,0.45)' : v === 'light' ? 'rgba(120,230,130,0.4)' : 'rgba(79,209,255,0.28)'; };
+  M.path.forEach(c => { ctx.beginPath(); hexSub(ctx, c.x, c.y, HEX*0.86); ctx.fillStyle = tint(c); ctx.fill(); });
+  const a = axToPx(M.a.q, M.a.r), b = axToPx(M.b.q, M.b.r);
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = HEX*0.16; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = HEX*0.07; ctx.stroke();
+  for (const p of [a, b]) { circle(ctx, p.x, p.y, HEX*0.14); ctx.fillStyle = '#4fd1ff'; ctx.fill(); }
+  labels.push({ x: b.x, y: b.y, text: `Range ${M.d}`, col: '#4fd1ff' });
+}
+
+function requestRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(render); } }
+let renderQueued = false, lastInfo = '';
+function render() {
+  renderQueued = false;
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w*dpr) || cv.height !== Math.round(h*dpr)) { cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!S) return;
+  const lw = 1.2 / view.scale, labels = [];
+  ctx.setTransform(dpr*view.scale, 0, 0, dpr*view.scale, dpr*view.ox, dpr*view.oy);
+  drawMapLayers(ctx, lw);
+
+  if (ui.hover && ui.tool !== 'move' && !ui.panning) {
+    const p = axToPx(ui.hover.q, ui.hover.r); ctx.beginPath(); hexSub(ctx, p.x, p.y, HEX);
+    ctx.strokeStyle = 'rgba(255,107,61,0.8)'; ctx.lineWidth = lw*2; ctx.stroke();
+  }
+  const A = computeArea(), M = computeRuler();
+  drawArea(ctx, lw, A);
+
+  const D = ui.drag && ui.drag.moved ? ui.drag : null;
+  if (D) {   // where the dragged token started
+    const t = tokenById(D.id), from = tokenCells({ ...t, q: D.from.q, r: D.from.r }), b = centroid(tokenCells(t));
+    ctx.setLineDash([HEX*0.15, HEX*0.1]); strokeEdges(ctx, outerEdges(from, HEX), HEX*0.06, 'rgba(255,255,255,0.6)'); ctx.setLineDash([]);
+    const m = movePath(t, D.from, t);
+    drawMovePath(ctx, m, 'rgba(255,255,255,0.85)');
+    labels.push({ x: b.x, y: b.y - DISC[t.size]*HEX, text: m ? moveText(m) : `No clear path (${hd(D.from, t)} straight)`, col: m && m.extra ? `rgb(${EFFECTS.difficult.col})` : '#ffffff' });
+  }
+  const hit = new Set(A ? A.hits.map(t => t.id) : []);
+  for (const t of B.tokens) drawToken(ctx, t, lw, hit.has(t.id));
+  drawRuler(ctx, lw, M, labels);
+  if (M && M.move) drawMovePath(ctx, M.move, `rgba(${EFFECTS.difficult.col},0.9)`, !M.detour);
+
+  // labels at a fixed on-screen size
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (const L of labels) pill(ctx, L.x*view.scale + view.ox, L.y*view.scale + view.oy - 26, L.text, 15, L.col);
+  updateInfo(A, M);
+}
+
+function updateInfo(A, M) {
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  const lines = [];
+  if (M) {
+    let t = `<b>Range ${M.d}</b>`;
+    if (M.from || M.to) t += ` · ${esc(M.from || 'hex')} → ${esc(M.to || 'hex')}`;
+    lines.push(t);
+    const md = moveDetail(M.move);
+    let mv = `${moveText(M.move)}${md ? ` <span class="warn">(${md})</span>` : ''}`;
+    if (M.detour) mv += ` <span class="muted">by the dotted route; straight ${M.straight ? 'would cost ' + M.straight.cost : 'is blocked by hard cover'}</span>`;
+    else if (!M.move) mv += ' <span class="muted">around hard cover</span>';
+    lines.push(mv);
+    const c = [];
+    if (M.cover.hard) c.push(`${M.cover.hard} hard cover hex${M.cover.hard > 1 ? 'es' : ''}`);
+    if (M.cover.light) c.push(`${M.cover.light} light cover hex${M.cover.light > 1 ? 'es' : ''}`);
+    if (c.length) lines.push(`<span class="warn">On the path: ${c.join(', ')}</span>`);
+  }
+  if (A) {
+    const name = { line:'Line', cone:'Cone', blast:'Blast', burst:'Burst' }[A.kind];
+    let t = `<b>${name} ${A.X}</b> · ${A.cells.length} hex${A.cells.length === 1 ? '' : 'es'}`;
+    if (A.kind === 'blast' && A.range != null) t += ` · centre at range ${A.range}`;
+    lines.push(t);
+    lines.push(A.hits.length ? 'Hits: ' + A.hits.map(h => esc(h.name)).join(', ') : '<span class="muted">No tokens caught</span>');
+  }
+  const html = lines.join('<br>');
+  if (html !== lastInfo) { lastInfo = html; $('info').innerHTML = html; $('info').hidden = !html; }
+}
+
+function fitView() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  view.scale = Math.min((w - 40) / gridW(), (h - 40) / gridH());
+  view.ox = (w - gridW()*view.scale) / 2; view.oy = (h - gridH()*view.scale) / 2;
+  requestRender();
+}
+function centerOn(t) {
+  const m = centroid(tokenCells(t));
+  view.ox = cv.clientWidth/2 - m.x*view.scale; view.oy = cv.clientHeight/2 - m.y*view.scale; requestRender();
+}
+
+/* =========================================================================
+   BATTLE STATE  (every token change goes through commit())
+   ========================================================================= */
+const snap = () => JSON.stringify(B);
+function pushUndo() { undoStack.push(snap()); if (undoStack.length > 200) undoStack.shift(); redoStack = []; updateUndoBtns(); }
+function undo() { if (!undoStack.length) return; redoStack.push(snap()); B = JSON.parse(undoStack.pop()); commit(); updateUndoBtns(); }
+function redo() { if (!redoStack.length) return; undoStack.push(snap()); B = JSON.parse(redoStack.pop()); commit(); updateUndoBtns(); }
+function updateUndoBtns() { $('btnUndo').disabled = !undoStack.length; $('btnRedo').disabled = !redoStack.length; }
+function commit() {
+  if (ui.sel != null && !tokenById(ui.sel)) ui.sel = null;
+  updateRoster(); updateSelBox(); requestRender(); scheduleSave();
+}
+
+let saveTimer = null, dirty = false;
+function setSaveStatus(t, cls) { const el = $('stSave'); el.textContent = t; el.className = cls || ''; }
+function scheduleSave() { dirty = true; setSaveStatus('Unsaved changes…'); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 600); }
+const battleData = () => ({ format: 'lancer-battle', version: 1, map: S, tokens: B.tokens, nextId: B.nextId });
+async function saveNow() {
+  clearTimeout(saveTimer); if (!S) return;
+  try { await store.put('battle', battleData()); dirty = false; setSaveStatus('Autosaved ✓', 'ok'); }
+  catch (e) { console.error(e); setSaveStatus('Autosave failed – use "Save battle to file"', 'bad'); }
+}
+window.addEventListener('beforeunload', () => { if (S && dirty) saveNow(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && S && dirty) saveNow(); });
+
+function normalizeTokens(list) {
+  return (Array.isArray(list) ? list : []).filter(t => t && Number.isFinite(t.q) && Number.isFinite(t.r)).map((t, i) => ({
+    id: Number.isFinite(t.id) ? t.id : i + 1, name: String(t.name || 'Token').slice(0, 40),
+    side: SIDES[t.side] ? t.side : 'neutral', size: SIZES.includes(t.size) ? t.size : 1,
+    q: Math.round(t.q), r: Math.round(t.r), rot: ((Math.round(t.rot) || 0) % 6 + 6) % 6,
+    img: typeof t.img === 'string' ? t.img : null,
+  }));
+}
+function setBattle(map, tokens, nextId) {
+  S = map; pathMemo = { key: null, val: null }; B = { tokens: normalizeTokens(tokens), nextId: 1 };
+  B.nextId = Math.max(nextId || 1, ...B.tokens.map(t => t.id + 1));
+  undoStack = []; redoStack = []; updateUndoBtns();
+  ui.sel = null; ui.ruler = null; ui.area = null; ui.drag = null;
+  $('menu').style.display = 'none'; $('battle').style.display = 'grid';
+  $('bName').textContent = S.name; $('showGrid').checked = S.showGrid; $('gridOp').value = S.gridOpacity;
+  bgImg = null;
+  if (S.bg) { const img = new Image(); img.onload = () => { bgImg = img; requestRender(); }; img.src = S.bg; }
+  setTool(ui.tool); commit();
+  requestAnimationFrame(fitView);
+  saveNow();
+}
+
+function freeSpotFor(t) {
+  const c = pxToAx((cv.clientWidth/2 - view.ox) / view.scale, (cv.clientHeight/2 - view.oy) / view.scale);
+  const taken = new Set(B.tokens.flatMap(o => tokenCells(o).map(hkey)));
+  for (let rad = 0; rad < 60; rad++)
+    for (const h of brushCells(c, rad)) {
+      if (hd(h, c) !== rad) continue;
+      const cells = tokenCells({ ...t, q: h.q, r: h.r });
+      if (fits(cells) && !cells.some(x => taken.has(hkey(x)))) return h;
+    }
+  return null;
+}
+function addToken(side) {
+  const n = B.tokens.filter(t => t.side === side).length + 1;
+  const t = { id: B.nextId, name: `${SIDES[side].label} ${n}`, side, size: ui.newSize, q: 0, r: 0, rot: 0, img: null };
+  const h = freeSpotFor(t); if (!h) { toast('No free space for a token that size'); return; }
+  pushUndo(); t.q = h.q; t.r = h.r; B.nextId++; B.tokens.push(t); ui.sel = t.id; commit();
+}
+function selected() { return ui.sel != null ? tokenById(ui.sel) : null; }
+function editSelected(fn) {   // change the selected token, but only keep the change if it still fits on the map
+  const t = selected(); if (!t) return;
+  const before = JSON.stringify(t), probe = JSON.parse(before); fn(probe);
+  if (!fits(tokenCells(probe))) { toast("That doesn't fit here – move the token first"); return; }
+  pushUndo(); Object.assign(t, probe); commit();
+}
+function deleteSelected() { const t = selected(); if (!t) return; pushUndo(); B.tokens = B.tokens.filter(x => x !== t); commit(); }
+function duplicateSelected() {
+  const t = selected(); if (!t) return;
+  const base = t.name.replace(/\s*\d+$/, '') || 'Token';
+  const copy = { ...t, id: B.nextId, name: `${base} ${B.tokens.filter(x => x.name.startsWith(base)).length + 1}` };
+  const h = freeSpotFor(copy); if (!h) { toast('No free space for a copy'); return; }
+  pushUndo(); copy.q = h.q; copy.r = h.r; B.nextId++; B.tokens.push(copy); ui.sel = copy.id; commit();
+}
+
+/* =========================================================================
+   SIDEBAR
+   ========================================================================= */
+let toastT = null;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1800); }
+function setTool(t) {
+  ui.tool = t;
+  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  $('toolHint').textContent = TOOL_HINTS[t]; updateCursor(); requestRender();
+}
+function setX(x) {
+  ui.X = Math.max(1, Math.min(15, x)); $('xVal').textContent = ui.X;
+  if (ui.area) ui.area.X = ui.X;
+  requestRender();
+}
+function updateCursor() {
+  cv.style.cursor = ui.panning ? 'grabbing' : ui.drag ? 'grabbing' : ui.space ? 'grab'
+    : ui.tool !== 'move' ? 'crosshair' : ui.hover && tokenAt(ui.hover) ? 'grab' : 'default';
+}
+function makeSeg(el, items, onPick) {
+  items.forEach(([val, label]) => {
+    const b = document.createElement('button'); b.className = 'btn small'; b.textContent = label; b.dataset.v = val;
+    b.onclick = () => onPick(val); el.appendChild(b);
+  });
+}
+const markSeg = (el, v) => el.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === String(v)));
+makeSeg($('newSizeSeg'), SIZES.map(s => [s, sizeLabel(s)]), s => { ui.newSize = +s; markSeg($('newSizeSeg'), s); });
+makeSeg($('tSizeSeg'), SIZES.map(s => [s, sizeLabel(s)]), s => editSelected(t => { t.size = +s; }));
+makeSeg($('tSideSeg'), Object.entries(SIDES).map(([k, v]) => [k, v.label]), s => editSelected(t => { t.side = s; }));
+markSeg($('newSizeSeg'), ui.newSize);
+
+function updateSelBox() {
+  const t = selected(); $('selBox').hidden = !t; if (!t) return;
+  if (document.activeElement !== $('tName')) $('tName').value = t.name;
+  markSeg($('tSizeSeg'), t.size); markSeg($('tSideSeg'), t.side);
+  $('btnRotate').disabled = t.size !== 2 && t.size !== 4;
+  $('btnImgRemove').disabled = !t.img;
+}
+function updateRoster() {
+  const el = $('roster'); el.innerHTML = '';
+  $('rosterEmpty').hidden = B.tokens.length > 0;
+  const order = Object.keys(SIDES);
+  [...B.tokens].sort((a, b) => order.indexOf(a.side) - order.indexOf(b.side) || a.name.localeCompare(b.name, undefined, { numeric: true }))
+    .forEach(t => {
+      const b = document.createElement('button'); b.className = 'btn' + (t.id === ui.sel ? ' active' : '');
+      const dot = document.createElement('span'); dot.className = 'dot'; dot.style.setProperty('--c', SIDES[t.side].col);
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = t.name;
+      const sz = document.createElement('span'); sz.className = 'sz'; sz.textContent = 'Size ' + sizeLabel(t.size);
+      b.append(dot, nm, sz);
+      b.onclick = () => { ui.sel = t.id; centerOn(t); commitView(); };
+      el.appendChild(b);
+    });
+}
+function commitView() { updateRoster(); updateSelBox(); requestRender(); }   // selection only, nothing to save
+
+document.querySelectorAll('.tool').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => addToken(b.dataset.add));
+$('xDown').onclick = () => setX(ui.X - 1);
+$('xUp').onclick = () => setX(ui.X + 1);
+$('tName').onfocus = () => pushUndo();
+$('tName').oninput = e => { const t = selected(); if (!t) return; t.name = e.target.value; updateRoster(); requestRender(); scheduleSave(); };
+$('btnRotate').onclick = () => editSelected(t => { t.rot = (t.rot + 1) % 6; });
+$('btnDup').onclick = duplicateSelected;
+$('btnDel').onclick = deleteSelected;
+$('btnImg').onclick = () => $('fileImg').click();
+$('btnImgRemove').onclick = () => editSelected(t => { t.img = null; });
+$('fileImg').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const r = await readImageFile(f), img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = r.url; });
+    const c = document.createElement('canvas'), N = 256, k = Math.min(img.width, img.height);   // square centre crop
+    c.width = c.height = N;
+    c.getContext('2d').drawImage(img, (img.width - k)/2, (img.height - k)/2, k, k, 0, 0, N, N);
+    const url = c.toDataURL('image/png');
+    editSelected(t => { t.img = url; });
+  } catch (err) { alert(err.message || 'Could not read that image'); }
+};
+$('showNames').onchange = e => { ui.showNames = e.target.checked; requestRender(); };
+$('hardBlocks').onchange = e => { ui.hardBlocks = e.target.checked; requestRender(); };
+$('showGrid').onchange = e => { S.showGrid = e.target.checked; requestRender(); scheduleSave(); };
+$('gridOp').oninput = e => { S.gridOpacity = +e.target.value; requestRender(); scheduleSave(); };
+$('btnUndo').onclick = undo;
+$('btnRedo').onclick = redo;
+$('btnFit').onclick = fitView;
+$('btnClearMeasure').onclick = clearMeasure;
+$('btnSaveFile').onclick = saveToFile;
+$('btnMenu').onclick = async () => { await saveNow(); S = null; bgImg = null; showMenu(); };
+$('btnEditMap').onclick = editMap;
+function clearMeasure() { ui.ruler = null; ui.area = null; requestRender(); }
+
+/* =========================================================================
+   CANVAS INPUT
+   ========================================================================= */
+function worldAt(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left - view.ox) / view.scale, y: (e.clientY - r.top - view.oy) / view.scale }; }
+function hexAt(e) { const w = worldAt(e), h = pxToAx(w.x, w.y); return inB(h.q, h.r) ? h : null; }
+const startPan = e => { ui.panning = true; ui.last = { x: e.clientX, y: e.clientY }; updateCursor(); };
+
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+cv.addEventListener('pointerdown', e => {
+  if (!S) return;
+  cv.setPointerCapture(e.pointerId);
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+  if (e.button === 1 || (e.button === 0 && ui.space)) { startPan(e); return; }
+  const h = hexAt(e);
+  if (e.button === 2) { if (h) { ui.ruler = { from: originAt(h), to: originAt(h), startHex: h, toHex: h, active: true }; requestRender(); } return; }
+  if (e.button !== 0) return;
+  if (ui.tool === 'move') {
+    const t = h && tokenAt(h);
+    if (!t) { if (ui.sel != null) { ui.sel = null; commitView(); } startPan(e); return; }
+    // keep the token under the same part of the cursor while dragging
+    ui.sel = t.id; ui.drag = { id: t.id, dq: h.q - t.q, dr: h.r - t.r, from: { q: t.q, r: t.r }, moved: false };
+    B.tokens = B.tokens.filter(x => x !== t).concat(t);   // bring to front
+    commitView(); updateCursor(); return;
+  }
+  if (!h) return;
+  const origin = originAt(h);
+  if (ui.tool === 'burst' && origin.token == null) { toast('Click a token to centre the burst on it'); }
+  ui.area = { kind: ui.tool, X: ui.X, origin: ui.tool === 'blast' && origin.token == null ? null : origin, P: worldAt(e), active: true };
+  requestRender();
+});
+cv.addEventListener('pointermove', e => {
+  if (!S) return;
+  if (ui.panning) { view.ox += e.clientX - ui.last.x; view.oy += e.clientY - ui.last.y; ui.last = { x: e.clientX, y: e.clientY }; requestRender(); return; }
+  const h = hexAt(e), prev = ui.hover; ui.hover = h;
+  if (h) {
+    const o = axToOff(h.q, h.r), k = keyOf(h.q, h.r), bits = [`Hex ${o.c + 1}, ${o.r + 1}`];
+    if (S.cells[k]) bits.push(COVER[S.cells[k]].label);
+    if (S.zones[k]) bits.push(ZONES[S.zones[k]].label);
+    if (S.effects[k]) bits.push(EFFECTS[S.effects[k]].label);
+    $('stHex').textContent = bits.join(' · ');
+  } else $('stHex').textContent = 'Hex —';
+
+  if (ui.drag && h) {
+    const t = tokenById(ui.drag.id), q = h.q - ui.drag.dq, r = h.r - ui.drag.dr;
+    if (t && (q !== t.q || r !== t.r) && fits(tokenCells({ ...t, q, r }))) {
+      if (!ui.drag.moved) { pushUndo(); ui.drag.moved = true; }
+      t.q = q; t.r = r; requestRender();
+    }
+  }
+  if (ui.ruler && ui.ruler.active && h) { ui.ruler.to = originAt(h); ui.ruler.toHex = h; }
+  if (ui.area && ui.area.active) ui.area.P = worldAt(e);
+  if (ui.ruler && ui.ruler.active || ui.area && ui.area.active || !prev || !h || prev.q !== h.q || prev.r !== h.r) { requestRender(); updateCursor(); }
+});
+function endPointer() {
+  if (ui.drag) { if (ui.drag.moved) commit(); ui.drag = null; }
+  if (ui.ruler) {
+    ui.ruler.active = false;
+    // a right-click without dragging just clears the ruler
+    const R = ui.ruler; if (R.to && JSON.stringify(R.from) === JSON.stringify(R.to)) ui.ruler = null;
+  }
+  if (ui.area) ui.area.active = false;   // the template stays on the map until Esc or the next one
+  ui.panning = false; updateCursor(); requestRender();
+}
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', endPointer);
+cv.addEventListener('pointerleave', () => { if (!ui.drag && !ui.panning) { ui.hover = null; requestRender(); } });
+cv.addEventListener('wheel', e => {
+  if (!S) return; e.preventDefault();
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const ns = Math.min(8, Math.max(0.05, view.scale * Math.exp(-e.deltaY * 0.0015)));
+  view.ox = mx - (mx - view.ox) * ns / view.scale; view.oy = my - (my - view.oy) * ns / view.scale; view.scale = ns;
+  requestRender();
+}, { passive: false });
+window.addEventListener('resize', requestRender);
+
+const typing = e => ['INPUT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'checkbox' && e.target.type !== 'range';
+window.addEventListener('keydown', e => {
+  if (!S || $('battle').style.display !== 'grid') return;
+  if (typing(e)) { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); return; }
+  const k = e.key.toLowerCase();
+  if (e.ctrlKey || e.metaKey) {
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+    else if (k === 's') { e.preventDefault(); saveToFile(); }
+    else if (k === 'd') { e.preventDefault(); duplicateSelected(); }
+    return;
+  }
+  if (k === ' ') { e.preventDefault(); if (!ui.space) { ui.space = true; updateCursor(); } return; }
+  const tools = { 1:'move', 2:'line', 3:'cone', 4:'blast', 5:'burst' };
+  if (tools[k]) setTool(tools[k]);
+  else if (k === '[' || k === '-') setX(ui.X - 1);
+  else if (k === ']' || k === '=' || k === '+') setX(ui.X + 1);
+  else if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSelected(); }
+  else if (k === 'r') { const t = selected(); if (t && (t.size === 2 || t.size === 4)) editSelected(x => { x.rot = (x.rot + (e.shiftKey ? 5 : 1)) % 6; }); }
+  else if (k === 'f') fitView();
+  else if (k === 'escape') { if (ui.ruler || ui.area) clearMeasure(); else if (ui.sel != null) { ui.sel = null; commitView(); } }
+});
+window.addEventListener('keyup', e => { if (e.key === ' ') { if (!typing(e)) e.preventDefault(); ui.space = false; updateCursor(); } });
+
+/* =========================================================================
+   FILES, MENU & THE MAP MAKER ROUND TRIP
+   ========================================================================= */
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+const safeName = () => (S.name || 'battle').replace(/[^\w\- ]+/g, '').trim() || 'battle';
+function saveToFile() { download(new Blob([JSON.stringify(battleData())], { type: 'application/json' }), safeName() + '.battle.json'); toast('Battle saved to file'); }
+
+let savedBattle = null, makerMap = null;
+async function openFile(f) {
+  try {
+    const d = JSON.parse(await f.text());
+    const isBattle = d && d.format === 'lancer-battle';
+    const map = normalizeMap(isBattle ? d.map : d);
+    if (savedBattle && savedBattle.tokens && savedBattle.tokens.length &&
+        !confirm(`This replaces your current battle on "${savedBattle.map.name}" (${savedBattle.tokens.length} tokens). Continue?`)) return;
+    setBattle(map, isBattle ? d.tokens : [], isBattle ? d.nextId : 1);
+  } catch (err) { alert('Could not open that file: ' + err.message); }
+}
+function showMenu() {
+  $('battle').style.display = 'none'; $('menu').style.display = 'flex';
+  Promise.all([store.get('battle'), store.get('autosave')]).then(([b, m]) => {
+    savedBattle = b && b.map ? b : null; makerMap = m;
+    $('continueBox').hidden = !savedBattle;
+    if (savedBattle) $('continueInfo').textContent = `"${savedBattle.map.name}" · ${(savedBattle.tokens || []).length} tokens`;
+    $('makerBox').hidden = !m;
+    if (m) $('makerInfo').textContent = `"${m.name}" · ${m.cols}×${m.rows} hexes`;
+  }).catch(e => console.warn(e));
+}
+$('btnContinue').onclick = () => { if (savedBattle) setBattle(normalizeMap(savedBattle.map), savedBattle.tokens, savedBattle.nextId); };
+$('btnUseMaker').onclick = () => {
+  if (!makerMap) return;
+  if (savedBattle && savedBattle.tokens && savedBattle.tokens.length &&
+      !confirm(`Start a new battle? Your current battle on "${savedBattle.map.name}" (${savedBattle.tokens.length} tokens) will be replaced.\n\nTip: "Save battle to file" keeps a copy.`)) return;
+  setBattle(normalizeMap(makerMap), [], 1);
+};
+$('btnLoadFile').onclick = () => $('fileMap').click();
+$('fileMap').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) openFile(f); };
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault(); const f = e.dataTransfer.files[0];
+  if (f && /\.json$/i.test(f.name)) openFile(f);
+});
+
+// Hand the map to the Map Maker; it comes back with "Back to battle" and the tokens are kept
+const mapContent = m => m && JSON.stringify([m.cols, m.rows, m.cells, m.zones, m.objects, m.bg]);
+async function editMap() {
+  const current = await store.get('autosave').catch(() => null);
+  if (current && mapContent(current) !== mapContent(S) &&
+      !confirm(`The Map Maker has another map open ("${current.name}"). Editing this battle's map replaces it there.\n\nTip: in the Map Maker, "Save to file" keeps a copy.\n\nContinue?`)) return;
+  try { await saveNow(); await store.put('autosave', JSON.parse(JSON.stringify(S))); }
+  catch (e) { alert('Could not hand the map to the Map Maker: ' + e.message); return; }
+  location.href = 'Map_maker.html?from=battle';
+}
+async function returnFromEditor() {
+  const [b, m] = await Promise.all([store.get('battle'), store.get('autosave')]);
+  if (!b || !m) { showMenu(); return; }
+  const map = normalizeMap(m), tokens = normalizeTokens(b.tokens);
+  setBattle(map, tokens, b.nextId);
+  // the map may have shrunk: pull stranded tokens back to the nearest spot that fits
+  let moved = 0;
+  for (const t of B.tokens) {
+    if (fits(tokenCells(t))) continue;
+    for (let rad = 1, done = false; rad < 200 && !done; rad++)
+      for (const h of brushCells(t, rad))
+        if (hd(h, t) === rad && fits(tokenCells({ ...t, q: h.q, r: h.r }))) { t.q = h.q; t.r = h.r; moved++; done = true; break; }
+  }
+  if (moved) { commit(); toast(`Map updated – ${moved} token(s) moved back onto the map`); }
+  else toast('Map updated');
+}
+
+/* =========================================================================
+   BOOT
+   ========================================================================= */
+setX(ui.X); setTool('move');
+const fromEditor = new URLSearchParams(location.search).get('from') === 'editor';
+history.replaceState(null, '', location.pathname);   // so a reload doesn't repeat the hand-over
+store.init().then(() => fromEditor ? returnFromEditor() : showMenu());
+</script>
+</body>
+</html>
