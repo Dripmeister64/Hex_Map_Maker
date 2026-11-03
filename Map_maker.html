@@ -74,6 +74,10 @@ input[type=checkbox]{accent-color:var(--accent2)}
 .tool.active,.tpl.active,.seg button.active{border-color:var(--accent2);background:#18293a;box-shadow:inset 0 0 0 1px var(--accent2)}
 .sw{width:16px;height:16px;border-radius:3px;border:1px solid rgba(255,255,255,.25);flex:none;
   clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
+.sw.zone{background:repeating-linear-gradient(45deg,rgba(var(--zc),.9) 0 3px,rgba(var(--zc),.3) 3px 6px)}
+.sw.diff{background:repeating-linear-gradient(45deg,rgba(214,160,90,.85) 0 2px,transparent 2px 5px),repeating-linear-gradient(-45deg,rgba(214,160,90,.85) 0 2px,rgba(214,160,90,.2) 2px 5px)}
+.sw.danger{background:rgba(236,84,60,.55);border-color:rgba(236,84,60,.95)}
+.climbic{width:16px;text-align:center;color:#aab4c0;font-weight:700}
 .sw.erase{background:repeating-linear-gradient(45deg,#ff6b3d 0 3px,transparent 3px 6px)}
 .seg{display:flex;gap:4px;margin-top:8px;align-items:center}
 .seg span{font-size:12px;color:var(--muted);margin-right:4px}
@@ -139,6 +143,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
 
     <div class="actions">
       <button class="btn" id="btnLoadFile">Open map file…</button>
+      <a class="btn" href="Battlemap.html" style="text-decoration:none">Battlemap ▸</a>
       <button class="btn primary" id="btnCreate">Create map ▸</button>
     </div>
   </div>
@@ -157,6 +162,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
     <button class="btn" id="btnExport">Export PNG</button>
     <button class="btn" id="btnSaveFile" title="Ctrl+S">Save to file</button>
     <button class="btn" id="btnMenu">Main menu</button>
+    <button class="btn primary" id="btnBackToBattle" hidden title="Return to the battlemap with this map; tokens stay where they were">Back to battle ▸</button>
   </header>
 
   <aside id="sidebar">
@@ -167,6 +173,17 @@ input[type=checkbox]{accent-color:var(--accent2)}
         <button class="btn tool" data-tool="hard"><span class="sw" style="background:#3a3e45"></span>Hard cover<kbd>2</kbd></button>
         <button class="btn tool" data-tool="erase"><span class="sw erase"></span>Eraser<kbd>3</kbd></button>
         <button class="btn tool" data-tool="pan"><span style="width:16px;text-align:center">✋</span>Pan view<kbd>4</kbd></button>
+      </div>
+      <div class="tplcat">Zones</div>
+      <div class="tools">
+        <button class="btn tool" data-tool="deploy"><span class="sw zone" style="--zc:61,139,255"></span>Deployment zone<kbd>5</kbd></button>
+        <button class="btn tool" data-tool="extract"><span class="sw zone" style="--zc:255,194,61"></span>Extraction zone<kbd>6</kbd></button>
+      </div>
+      <div class="tplcat">Effects</div>
+      <div class="tools">
+        <button class="btn tool" data-tool="difficult" title="Costs double movement to enter"><span class="sw diff"></span>Difficult terrain<kbd>7</kbd></button>
+        <button class="btn tool" data-tool="climb" title="Click or drag along the border between two hexes. Crossing it costs double movement"><span class="climbic">╪</span>Climb (hex border)<kbd>8</kbd></button>
+        <button class="btn tool" data-tool="dangerous" title="Entering it means an Engineering check or 5 damage; costs no extra movement"><span class="sw danger"></span>Dangerous terrain<kbd>9</kbd></button>
       </div>
       <div class="seg" id="brushSeg">
         <span>Brush</span>
@@ -218,7 +235,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
     <span id="stHex">Hex —</span>
     <span id="stCounts"></span>
     <span class="grow"></span>
-    <span>Right-click: remove · Wheel: zoom · Space/middle-drag: pan · R: rotate · Esc: deselect</span>
+    <span>5/6: zones · 7–9: effects · Right-click: remove · Wheel: zoom · Space/middle-drag: pan · R: rotate · Esc: deselect</span>
     <span id="stSave"></span>
   </footer>
 </div>
@@ -226,413 +243,21 @@ input[type=checkbox]{accent-color:var(--accent2)}
 <input type="file" id="fileBg" accept="image/*" hidden>
 <input type="file" id="fileMap" accept=".json,application/json" hidden>
 
+<script src="hexmap_core.js"></script>
 <script>
 "use strict";
-/* =========================================================================
-   CONSTANTS & GEOMETRY  (pointy-top hexes, "odd-r" offset layout)
-   ========================================================================= */
-const SQRT3 = Math.sqrt(3), TAU = Math.PI * 2, HEX = 50;   // HEX = hex radius in world px
-const DIRS = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]];       // DIRS[i] is the neighbour across edge i
-const COVER = {
-  light: { fill:'rgba(70,185,85,0.55)', ring:'rgba(160,255,170,0.35)', label:'Light cover' },
-  hard:  { fill:'rgba(62,66,74,0.92)',  ring:'rgba(185,195,210,0.40)', label:'Hard cover'  },
-};
-
 let S = null;            // the current map (everything here gets saved)
 let bgImg = null;        // decoded background image
 const view = { scale: 1, ox: 0, oy: 0 };
-const ui = { tool:'light', brush:0, template:null, rot:0, autoCover:true, hover:null,
+const ui = { tool:'light', brush:0, template:null, rot:0, autoCover:true, hover:null, hoverEdge:null,
              painting:false, paintMode:null, lastPaintKey:null, panning:false, last:null, space:false };
 let undoStack = [], redoStack = [];
-
-const gridW = () => HEX * SQRT3 * (S.cols + 0.5);
-const gridH = () => HEX * (1.5 * S.rows + 0.5);
-const axToPx = (q, r) => ({ x: HEX*SQRT3*(q + r/2) + HEX*SQRT3/2, y: HEX*1.5*r + HEX });
-const offToAx = (c, r) => ({ q: c - (r - (r & 1)) / 2, r });
-const axToOff = (q, r) => ({ c: q + (r - (r & 1)) / 2, r });
-const keyOf = (q, r) => { const o = axToOff(q, r); return o.c + ',' + o.r; };
-function inB(q, r) { const o = axToOff(q, r); return o.r >= 0 && o.r < S.rows && o.c >= 0 && o.c < S.cols; }
-
-function axRound(fq, fr) {
-  const fs = -fq - fr;
-  let q = Math.round(fq), r = Math.round(fr), s = Math.round(fs);
-  const dq = Math.abs(q - fq), dr = Math.abs(r - fr), ds = Math.abs(s - fs);
-  if (dq > dr && dq > ds) q = -r - s; else if (dr > ds) r = -q - s;
-  return { q, r };
-}
-function pxToAx(x, y) {
-  const px = x - HEX*SQRT3/2, py = y - HEX;
-  return axRound((px/SQRT3 - py/3) / HEX, (2/3 * py) / HEX);
-}
-function rotAx(q, r, n) { n = ((n % 6) + 6) % 6; for (let i = 0; i < n; i++) { const t = q; q = -r; r = t + r; } return [q, r]; }
-function brushCells(h, rad) {
-  const out = [];
-  for (let dq = -rad; dq <= rad; dq++)
-    for (let dr = Math.max(-rad, -dq - rad); dr <= Math.min(rad, -dq + rad); dr++)
-      out.push({ q: h.q + dq, r: h.r + dr });
-  return out;
-}
-function footprint(type, q, r, rot) {
-  return TEMPLATES[type].fp.map(([dq, dr]) => {
-    const [a, b] = rotAx(dq, dr, rot); const Q = q + a, R = r + b; const p = axToPx(Q, R);
-    return { q: Q, r: R, x: p.x, y: p.y };
-  });
-}
-
-/* =========================================================================
-   DRAWING HELPERS
-   ========================================================================= */
-function hexCorner(x, y, s, i) { const a = Math.PI/180 * (60*i - 30); return [x + s*Math.cos(a), y + s*Math.sin(a)]; }
-function hexSub(ctx, x, y, s) {
-  for (let i = 0; i < 6; i++) { const [px, py] = hexCorner(x, y, s, i); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
-  ctx.closePath();
-}
-function footprintPath(ctx, cells, s) { ctx.beginPath(); cells.forEach(c => hexSub(ctx, c.x, c.y, s)); }
-function outerEdges(cells, s) {
-  const set = new Set(cells.map(c => c.q + ',' + c.r)), edges = [];
-  cells.forEach(c => { for (let i = 0; i < 6; i++)
-    if (!set.has((c.q + DIRS[i][0]) + ',' + (c.r + DIRS[i][1])))
-      edges.push([hexCorner(c.x, c.y, s, i), hexCorner(c.x, c.y, s, (i + 1) % 6)]); });
-  return edges;
-}
-function strokeEdges(ctx, edges, w, col) {
-  ctx.beginPath(); edges.forEach(([a, b]) => { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); });
-  ctx.lineWidth = w; ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
-}
-function bbox(cells, s) {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  cells.forEach(c => { x0 = Math.min(x0, c.x - s); y0 = Math.min(y0, c.y - s); x1 = Math.max(x1, c.x + s); y1 = Math.max(y1, c.y + s); });
-  return { x0, y0, x1, y1 };
-}
-function rr(ctx, x, y, w, h, r) {
-  r = Math.min(r, w/2, h/2); ctx.beginPath(); ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-}
-const rotV = (x, y, a) => [x*Math.cos(a) - y*Math.sin(a), x*Math.sin(a) + y*Math.cos(a)];
-function rng(seed) {
-  let a = (seed * 2654435761) >>> 0 || 1;
-  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-}
-function circle(ctx, x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); }
-function light(ctx, x, y, r, col) {
-  ctx.save(); ctx.globalAlpha *= 0.3; circle(ctx, x, y, r * 2.4); ctx.fillStyle = col; ctx.fill(); ctx.restore();
-  circle(ctx, x, y, r); ctx.fillStyle = col; ctx.fill();
-}
-function vent(ctx, x, y, r, rot = 0) {
-  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
-  circle(ctx, 0, 0, r); ctx.fillStyle = '#181d24'; ctx.fill(); ctx.lineWidth = r*0.2; ctx.strokeStyle = '#9aa3ad'; ctx.stroke();
-  ctx.fillStyle = '#56606b';
-  for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI/2); ctx.beginPath(); ctx.ellipse(r*0.42, 0, r*0.38, r*0.15, 0.5, 0, TAU); ctx.fill(); }
-  circle(ctx, 0, 0, r*0.18); ctx.fillStyle = '#9aa3ad'; ctx.fill();
-  ctx.restore();
-}
-function acUnit(ctx, x, y, s, ang) {
-  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
-  const w = s*0.46, h = s*0.34;
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-w/2 + s*0.05, -h/2 + s*0.06, w, h);
-  ctx.fillStyle = '#5b6470'; ctx.fillRect(-w/2, -h/2, w, h);
-  ctx.strokeStyle = '#1c2026'; ctx.lineWidth = s*0.03; ctx.strokeRect(-w/2, -h/2, w, h);
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = s*0.02;
-  for (let i = 1; i < 5; i++) { const yy = -h/2 + h*i/5; ctx.beginPath(); ctx.moveTo(-w/2 + s*0.04, yy); ctx.lineTo(w*0.05, yy); ctx.stroke(); }
-  circle(ctx, w*0.24, 0, h*0.32); ctx.fillStyle = '#2a3038'; ctx.fill(); ctx.strokeStyle = '#8b95a1'; ctx.stroke();
-  ctx.restore();
-}
-
-/* Generic sci-fi building roof: fills the footprint, adds inset trim, accent edge and drop shadow */
-const PAL = {
-  bunker: { roof:'#6b7480', trim:'#4a525c', accent:'#4fd1ff' },
-  hab:    { roof:'#aab5c1', trim:'#7b8794', accent:'#4fd1ff' },
-  ware:   { roof:'#857558', trim:'#5c513e', accent:'#ffb347' },
-  hq:     { roof:'#4b5563', trim:'#323a45', accent:'#ff6b3d' },
-};
-function buildingBase(ctx, cells, s, pal) {
-  ctx.save(); ctx.translate(s*0.12, s*0.16); footprintPath(ctx, cells, s);
-  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill(); ctx.restore();
-  footprintPath(ctx, cells, s); ctx.fillStyle = pal.roof; ctx.fill();
-  const b = bbox(cells, s), e = outerEdges(cells, s);
-  ctx.save(); footprintPath(ctx, cells, s); ctx.clip();
-  const g = ctx.createLinearGradient(b.x0, b.y0, b.x1, b.y1);
-  g.addColorStop(0, 'rgba(255,255,255,0.14)'); g.addColorStop(1, 'rgba(0,0,0,0.24)');
-  ctx.fillStyle = g; ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
-  strokeEdges(ctx, e, s*0.40, 'rgba(0,0,0,0.45)');
-  strokeEdges(ctx, e, s*0.35, pal.trim);
-  strokeEdges(ctx, e, s*0.13, pal.accent);
-  ctx.restore();
-  strokeEdges(ctx, e, s*0.05, '#0a0c10');
-}
-
-/* Concrete jersey-barrier style bar with hazard-striped ends */
-function drawBar(ctx, x, y, ang, L, W, s) {
-  ctx.save(); ctx.translate(x + s*0.07, y + s*0.1); ctx.rotate(ang);
-  rr(ctx, -L/2, -W/2, L, W, W*0.25); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill(); ctx.restore();
-
-  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
-  const g = ctx.createLinearGradient(0, -W/2, 0, W/2);
-  g.addColorStop(0, '#b6bdc5'); g.addColorStop(0.5, '#8f979f'); g.addColorStop(1, '#5e656d');
-  rr(ctx, -L/2, -W/2, L, W, W*0.25); ctx.fillStyle = g; ctx.fill();
-  ctx.save(); ctx.clip();
-  const hz = Math.min(W*1.1, L*0.2), inner = L - 2*hz;
-  for (const side of [-1, 1]) {
-    const x0 = side < 0 ? -L/2 : L/2 - hz;
-    ctx.save(); ctx.beginPath(); ctx.rect(x0, -W/2, hz, W); ctx.clip();
-    ctx.fillStyle = '#f2c230'; ctx.fillRect(x0, -W/2, hz, W);
-    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = W*0.22; ctx.lineCap = 'butt';
-    for (let t = -W*2; t < hz + W*2; t += W*0.55) { ctx.beginPath(); ctx.moveTo(x0 + t, -W/2); ctx.lineTo(x0 + t + W, W/2); ctx.stroke(); }
-    ctx.restore();
-  }
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = W*0.07;
-  const segs = Math.max(1, Math.round(inner / (W*1.8)));
-  for (let i = 1; i < segs; i++) { const px = -L/2 + hz + inner*i/segs; ctx.beginPath(); ctx.moveTo(px, -W/2); ctx.lineTo(px, W/2); ctx.stroke(); }
-  ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(-L/2 + hz, -W*0.14, inner, W*0.13);
-  ctx.fillStyle = 'rgba(79,209,255,0.9)'; ctx.fillRect(-L/2 + hz + W*0.25, W*0.2, Math.max(0, inner - W*0.5), W*0.08);
-  ctx.restore();
-  rr(ctx, -L/2, -W/2, L, W, W*0.25); ctx.strokeStyle = '#1c2026'; ctx.lineWidth = W*0.09; ctx.stroke();
-  ctx.restore();
-}
-
-/* =========================================================================
-   TEMPLATES (2D art)
-   ========================================================================= */
-function drawBarricade(ctx, cells, s, o) { const c = cells[0]; drawBar(ctx, c.x, c.y, o.rot * Math.PI/6, s*1.5, s*0.34, s); }
-function drawWall(ctx, cells, s) {
-  const a = cells[0], b = cells[cells.length - 1];
-  drawBar(ctx, (a.x + b.x)/2, (a.y + b.y)/2, Math.atan2(b.y - a.y, b.x - a.x), Math.hypot(b.x - a.x, b.y - a.y) + s*1.2, s*0.38, s);
-}
-function drawCrates(ctx, cells, s, o) {
-  const c = cells[0], rnd = rng(o.id*31 + o.rot), ang = o.rot * Math.PI/3;
-  const cols = ['#6b705c', '#56606e', '#7a6248', '#5f6b52'];
-  const [sx, sy] = rotV(s*0.07, s*0.1, -ang);
-  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
-  [[-0.28, -0.2, 0.48], [0.27, 0.02, 0.42], [-0.05, 0.37, 0.34]].forEach(([bx, by, bs]) => {
-    const a = (rnd() - 0.5) * 0.5, w = bs*s;
-    ctx.save(); ctx.translate(bx*s, by*s); ctx.rotate(a);
-    const [lx, ly] = rotV(sx, sy, -a);
-    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(-w/2 + lx, -w/2 + ly, w, w);
-    ctx.fillStyle = cols[Math.floor(rnd() * cols.length)]; ctx.fillRect(-w/2, -w/2, w, w);
-    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(-w/2, -w/2, w, w*0.45);
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = s*0.025;
-    ctx.strokeRect(-w*0.36, -w*0.36, w*0.72, w*0.72);
-    ctx.beginPath(); ctx.moveTo(-w*0.36, -w*0.36); ctx.lineTo(w*0.36, w*0.36); ctx.moveTo(w*0.36, -w*0.36); ctx.lineTo(-w*0.36, w*0.36); ctx.stroke();
-    ctx.fillStyle = '#ff8a3d'; ctx.fillRect(-w/2, -w/2, w, w*0.1);
-    ctx.strokeStyle = '#1c2026'; ctx.lineWidth = s*0.035; ctx.strokeRect(-w/2, -w/2, w, w);
-    ctx.restore();
-  });
-  ctx.restore();
-}
-function drawDebris(ctx, cells, s, o) {
-  const c = cells[0], rnd = rng(o.id*7 + 3 + o.rot);
-  const tones = ['#6e6a64', '#857c70', '#5b5f66', '#77706a'];
-  const pieces = [];
-  for (let i = 0; i < 8; i++) {
-    const a = rnd()*TAU, d = Math.sqrt(rnd()) * s*0.55, r = s*(0.1 + rnd()*0.16), n = 5 + Math.floor(rnd()*3), pr = rnd()*TAU;
-    const col = tones[Math.floor(rnd()*tones.length)], pts = [];
-    for (let k = 0; k < n; k++) { const aa = pr + k/n*TAU, rad = r*(0.6 + rnd()*0.5); pts.push([Math.cos(a)*d + Math.cos(aa)*rad, Math.sin(a)*d + Math.sin(aa)*rad]); }
-    pieces.push({ pts, col });
-  }
-  const poly = (pts, dx, dy) => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x + dx, y + dy) : ctx.moveTo(x + dx, y + dy)); ctx.closePath(); };
-  ctx.save(); ctx.translate(c.x, c.y);
-  circle(ctx, 0, 0, s*0.72); ctx.fillStyle = 'rgba(95,85,72,0.3)'; ctx.fill();
-  pieces.forEach(p => { poly(p.pts, s*0.06, s*0.08); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill(); });
-  pieces.forEach(p => { poly(p.pts, 0, 0); ctx.fillStyle = p.col; ctx.fill(); ctx.strokeStyle = '#2a2826'; ctx.lineWidth = s*0.025; ctx.stroke(); });
-  ctx.strokeStyle = '#a06a42'; ctx.lineWidth = s*0.028; ctx.lineCap = 'round';
-  for (let i = 0; i < 3; i++) {
-    const a = rnd()*TAU, d = rnd()*s*0.4, x = Math.cos(a)*d, y = Math.sin(a)*d, b = rnd()*TAU;
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(b)*s*0.3, y + Math.sin(b)*s*0.3); ctx.stroke();
-  }
-  ctx.restore();
-}
-function drawFlora(ctx, cells, s, o) {
-  const c = cells[0], rnd = rng(o.id*13 + o.rot);
-  const blobs = [];
-  for (let i = 0; i < 7; i++) {
-    const a = rnd()*TAU, d = Math.sqrt(rnd()) * s*0.45;
-    blobs.push({ x: Math.cos(a)*d, y: Math.sin(a)*d, r: s*(0.17 + rnd()*0.14), p: rnd() < 0.65 });
-  }
-  ctx.save(); ctx.translate(c.x, c.y);
-  blobs.forEach(b => { circle(ctx, b.x + s*0.07, b.y + s*0.09, b.r); ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fill(); });
-  blobs.forEach(b => {
-    const g = ctx.createRadialGradient(b.x - b.r*0.3, b.y - b.r*0.3, b.r*0.1, b.x, b.y, b.r);
-    if (b.p) { g.addColorStop(0, '#6ff0d0'); g.addColorStop(1, '#126b5a'); } else { g.addColorStop(0, '#c99cff'); g.addColorStop(1, '#4a2a7a'); }
-    circle(ctx, b.x, b.y, b.r); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = s*0.02; ctx.stroke();
-  });
-  for (let i = 0; i < 6; i++) { const a = rnd()*TAU, d = rnd()*s*0.5; light(ctx, Math.cos(a)*d, Math.sin(a)*d, s*0.025, '#c8fff4'); }
-  ctx.restore();
-}
-function drawContainer(ctx, cells, s, o) {
-  const [a, b] = cells, ang = Math.atan2(b.y - a.y, b.x - a.x);
-  const L = Math.hypot(b.x - a.x, b.y - a.y) + s*1.0, W = s*0.78, mx = (a.x + b.x)/2, my = (a.y + b.y)/2;
-  const col = ['#b5542d', '#2f6db0', '#4f8a3a', '#c99a22', '#7a3fa0'][Math.floor(rng(o.id*5 + 1)() * 5)];
-  ctx.save(); ctx.translate(mx + s*0.08, my + s*0.11); ctx.rotate(ang); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(-L/2, -W/2, L, W); ctx.restore();
-  ctx.save(); ctx.translate(mx, my); ctx.rotate(ang);
-  ctx.fillStyle = col; ctx.fillRect(-L/2, -W/2, L, W);
-  const g = ctx.createLinearGradient(0, -W/2, 0, W/2);
-  g.addColorStop(0, 'rgba(255,255,255,0.2)'); g.addColorStop(1, 'rgba(0,0,0,0.28)'); ctx.fillStyle = g; ctx.fillRect(-L/2, -W/2, L, W);
-  ctx.strokeStyle = 'rgba(0,0,0,0.28)'; ctx.lineWidth = s*0.03;
-  for (let x = -L/2 + s*0.2; x < L/2 - s*0.15; x += s*0.11) { ctx.beginPath(); ctx.moveTo(x, -W/2 + s*0.05); ctx.lineTo(x, W/2 - s*0.05); ctx.stroke(); }
-  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-L/2, -W/2, s*0.12, W); ctx.fillRect(L/2 - s*0.12, -W/2, s*0.12, W);
-  ctx.fillStyle = '#d8dde3';
-  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([i, j]) => ctx.fillRect(i*L/2 - (i > 0 ? s*0.1 : 0), j*W/2 - (j > 0 ? s*0.1 : 0), s*0.1, s*0.1));
-  ctx.fillStyle = 'rgba(240,240,240,0.85)'; ctx.fillRect(-s*0.4, -s*0.07, s*0.8, s*0.14);
-  ctx.fillStyle = '#1c2026'; for (let i = 0; i < 5; i++) ctx.fillRect(-s*0.34 + i*s*0.14, -s*0.035, s*0.08, s*0.07);
-  ctx.strokeStyle = '#15181c'; ctx.lineWidth = s*0.04; ctx.strokeRect(-L/2, -W/2, L, W);
-  ctx.restore();
-}
-function drawTanks(ctx, cells, s, o) {
-  const c = cells[0], ang = o.rot * Math.PI/3, [sx, sy] = rotV(s*0.07, s*0.1, -ang);
-  const tanks = [[-0.27, -0.13, 0.4], [0.37, 0.23, 0.3]];
-  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
-  ctx.strokeStyle = '#2d333b'; ctx.lineWidth = s*0.13; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(-0.27*s, -0.13*s); ctx.lineTo(0.37*s, 0.23*s); ctx.stroke();
-  ctx.strokeStyle = '#7d8793'; ctx.lineWidth = s*0.07; ctx.stroke();
-  tanks.forEach(([tx, ty, tr]) => { circle(ctx, tx*s + sx, ty*s + sy, tr*s); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill(); });
-  tanks.forEach(([tx, ty, tr]) => {
-    const x = tx*s, y = ty*s, r = tr*s;
-    const g = ctx.createRadialGradient(x - r*0.35, y - r*0.35, r*0.1, x, y, r);
-    g.addColorStop(0, '#eef1f4'); g.addColorStop(0.6, '#a9b2bc'); g.addColorStop(1, '#5f6873');
-    circle(ctx, x, y, r); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = '#1f242a'; ctx.lineWidth = s*0.04; ctx.stroke();
-    circle(ctx, x, y, r*0.68); ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = s*0.025; ctx.stroke();
-    ctx.beginPath(); ctx.arc(x, y, r*0.86, -0.6, 0.6); ctx.strokeStyle = '#ff6b3d'; ctx.lineWidth = s*0.05; ctx.stroke();
-    circle(ctx, x, y, r*0.2); ctx.fillStyle = '#3a414a'; ctx.fill();
-  });
-  ctx.restore();
-}
-function drawComms(ctx, cells, s, o) {
-  const c = cells[0], ang = o.rot * Math.PI/3, [sx, sy] = rotV(s*0.08, s*0.11, -ang);
-  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
-  ctx.beginPath(); hexSub(ctx, sx, sy, s*0.62); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
-  ctx.beginPath(); hexSub(ctx, 0, 0, s*0.62); ctx.fillStyle = '#39404a'; ctx.fill(); ctx.strokeStyle = '#1b1f25'; ctx.lineWidth = s*0.04; ctx.stroke();
-  ctx.beginPath(); hexSub(ctx, 0, 0, s*0.5); ctx.strokeStyle = '#f2c230'; ctx.setLineDash([s*0.08, s*0.08]); ctx.lineWidth = s*0.04; ctx.stroke(); ctx.setLineDash([]);
-  const dx = s*0.05, dy = -s*0.05, R = s*0.43;
-  circle(ctx, dx + sx*1.4, dy + sy*1.4, R); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
-  const g = ctx.createRadialGradient(dx - R*0.3, dy - R*0.3, R*0.1, dx, dy, R);
-  g.addColorStop(0, '#f3f5f7'); g.addColorStop(0.7, '#aab3bd'); g.addColorStop(1, '#6b7480');
-  circle(ctx, dx, dy, R); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = '#22272e'; ctx.lineWidth = s*0.04; ctx.stroke();
-  ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = s*0.018;
-  circle(ctx, dx, dy, R*0.66); ctx.stroke();
-  for (let i = 0; i < 8; i++) { const a = i/8*TAU; ctx.beginPath(); ctx.moveTo(dx, dy); ctx.lineTo(dx + Math.cos(a)*R, dy + Math.sin(a)*R); ctx.stroke(); }
-  const fx = dx + R*0.2, fy = dy - R*0.2;
-  ctx.strokeStyle = '#2b3038'; ctx.lineWidth = s*0.035;
-  [Math.PI/2, Math.PI*7/6, -Math.PI/6].forEach(a => { ctx.beginPath(); ctx.moveTo(dx + Math.cos(a)*R*0.95, dy + Math.sin(a)*R*0.95); ctx.lineTo(fx, fy); ctx.stroke(); });
-  circle(ctx, fx, fy, s*0.07); ctx.fillStyle = '#2b3038'; ctx.fill();
-  light(ctx, fx, fy, s*0.03, '#ff4040');
-  ctx.restore();
-}
-function drawBunker(ctx, cells, s, o) {
-  buildingBase(ctx, cells, s, PAL.bunker);
-  const c = cells[0];
-  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(o.rot * Math.PI/3);
-  ctx.beginPath(); hexSub(ctx, 0, 0, s*0.46); ctx.fillStyle = '#7f8995'; ctx.fill(); ctx.lineWidth = s*0.04; ctx.strokeStyle = '#2b3038'; ctx.stroke();
-  ctx.fillStyle = '#0b0f14'; ctx.fillRect(s*0.47, -s*0.24, s*0.14, s*0.48);
-  ctx.fillStyle = 'rgba(79,209,255,0.9)'; ctx.fillRect(s*0.53, -s*0.2, s*0.035, s*0.4);
-  circle(ctx, 0, 0, s*0.2); ctx.fillStyle = '#59616c'; ctx.fill(); ctx.strokeStyle = '#2b3038'; ctx.lineWidth = s*0.035; ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(-s*0.13, 0); ctx.lineTo(s*0.13, 0); ctx.moveTo(0, -s*0.13); ctx.lineTo(0, s*0.13); ctx.stroke();
-  light(ctx, -s*0.3, -s*0.42, s*0.035, '#ff6b3d');
-  ctx.restore();
-}
-function drawHab(ctx, cells, s) {
-  buildingBase(ctx, cells, s, PAL.hab);
-  const [a, b] = cells, ang = Math.atan2(b.y - a.y, b.x - a.x);
-  ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
-  ctx.strokeStyle = '#2c333c'; ctx.lineWidth = s*0.36; ctx.stroke();
-  ctx.strokeStyle = '#8995a3'; ctx.lineWidth = s*0.28; ctx.stroke();
-  ctx.strokeStyle = 'rgba(79,209,255,0.85)'; ctx.lineWidth = s*0.04; ctx.lineCap = 'butt'; ctx.stroke();
-  [a, b].forEach(c => vent(ctx, c.x, c.y, s*0.27, ang));
-  ctx.save(); ctx.translate((a.x + b.x)/2, (a.y + b.y)/2); ctx.rotate(ang);
-  ctx.fillStyle = '#26384a';
-  for (const side of [-1, 1]) for (let i = -1; i <= 1; i++) {
-    ctx.fillRect(i*s*0.2 - s*0.07, side*s*0.42 - s*0.08, s*0.14, s*0.16);
-    ctx.fillStyle = 'rgba(79,209,255,0.35)'; ctx.fillRect(i*s*0.2 - s*0.07, side*s*0.42 - s*0.08, s*0.14, s*0.05); ctx.fillStyle = '#26384a';
-  }
-  ctx.restore();
-}
-function drawWarehouse(ctx, cells, s, o) {
-  buildingBase(ctx, cells, s, PAL.ware);
-  const cx = cells.reduce((t, c) => t + c.x, 0) / cells.length, cy = cells.reduce((t, c) => t + c.y, 0) / cells.length;
-  ctx.save(); footprintPath(ctx, cells, s*0.8); ctx.clip();
-  ctx.translate(cx, cy); ctx.rotate(o.rot * Math.PI/3);
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = s*0.035;
-  for (let x = -2.5*s; x <= 2.5*s; x += s*0.16) { ctx.beginPath(); ctx.moveTo(x, -2.5*s); ctx.lineTo(x, 2.5*s); ctx.stroke(); }
-  ctx.restore();
-  vent(ctx, cells[0].x, cells[0].y, s*0.32, o.rot);
-  for (const c of [cells[1], cells[2]]) {
-    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(o.rot * Math.PI/3 + Math.PI/2);
-    ctx.fillStyle = '#1c2a35'; ctx.fillRect(-s*0.3, -s*0.14, s*0.6, s*0.28);
-    ctx.fillStyle = 'rgba(120,215,255,0.5)'; ctx.fillRect(-s*0.27, -s*0.11, s*0.54, s*0.1);
-    ctx.strokeStyle = '#2d2a24'; ctx.lineWidth = s*0.03; ctx.strokeRect(-s*0.3, -s*0.14, s*0.6, s*0.28);
-    ctx.beginPath(); ctx.moveTo(0, -s*0.14); ctx.lineTo(0, s*0.14); ctx.stroke();
-    ctx.restore();
-  }
-  light(ctx, cx, cy, s*0.05, PAL.ware.accent);
-}
-function drawHQ(ctx, cells, s, o) {
-  buildingBase(ctx, cells, s, PAL.hq);
-  const c = cells[0];
-  for (let i = 1; i < cells.length; i++) {
-    const k = cells[i], ang = Math.atan2(k.y - c.y, k.x - c.x);
-    if (i % 2) vent(ctx, k.x, k.y, s*0.25, ang); else acUnit(ctx, k.x, k.y, s, ang);
-    light(ctx, c.x + (k.x - c.x)*1.42, c.y + (k.y - c.y)*1.42, s*0.05, PAL.hq.accent);
-  }
-  ctx.beginPath(); hexSub(ctx, c.x, c.y, s*0.95); ctx.fillStyle = '#39414d'; ctx.fill(); ctx.lineWidth = s*0.06; ctx.strokeStyle = '#1b2028'; ctx.stroke();
-  circle(ctx, c.x, c.y, s*0.6); ctx.fillStyle = '#262c35'; ctx.fill(); ctx.lineWidth = s*0.06; ctx.strokeStyle = '#f2c230'; ctx.stroke();
-  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(o.rot * Math.PI/3);
-  ctx.strokeStyle = '#f2c230'; ctx.lineWidth = s*0.09; ctx.lineCap = 'butt'; ctx.beginPath();
-  ctx.moveTo(-s*0.2, -s*0.28); ctx.lineTo(-s*0.2, s*0.28); ctx.moveTo(s*0.2, -s*0.28); ctx.lineTo(s*0.2, s*0.28);
-  ctx.moveTo(-s*0.2, 0); ctx.lineTo(s*0.2, 0); ctx.stroke();
-  ctx.restore();
-  for (let i = 0; i < 8; i++) { const a = i/8*TAU; light(ctx, c.x + Math.cos(a)*s*0.77, c.y + Math.sin(a)*s*0.77, s*0.035, '#4fd1ff'); }
-}
-
-const TEMPLATES = {
-  barricade: { name:'Barricade',       cat:'Cover',     fp:[[0,0]],                 cover:'hard',  rotStep:30, draw:drawBarricade },
-  wall:      { name:'Barricade Wall',  cat:'Cover',     fp:[[-1,0],[0,0],[1,0]],    cover:'hard',  rotStep:60, draw:drawWall },
-  crates:    { name:'Cargo Crates',    cat:'Cover',     fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawCrates },
-  debris:    { name:'Debris',          cat:'Cover',     fp:[[0,0]],                 cover:'light', rotStep:60, draw:drawDebris },
-  flora:     { name:'Alien Flora',     cat:'Cover',     fp:[[0,0]],                 cover:'light', rotStep:60, draw:drawFlora },
-  container: { name:'Cargo Container', cat:'Props',     fp:[[0,0],[1,0]],           cover:'hard',  rotStep:60, draw:drawContainer },
-  tanks:     { name:'Fuel Tanks',      cat:'Props',     fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawTanks },
-  comms:     { name:'Comms Dish',      cat:'Props',     fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawComms },
-  bunker:    { name:'Bunker',          cat:'Buildings', fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawBunker },
-  hab:       { name:'Hab Module',      cat:'Buildings', fp:[[0,0],[1,0]],           cover:'hard',  rotStep:60, draw:drawHab },
-  warehouse: { name:'Warehouse',       cat:'Buildings', fp:[[0,0],[1,0],[0,1]],     cover:'hard',  rotStep:60, draw:drawWarehouse },
-  hq:        { name:'Command Center',  cat:'Buildings', fp:[[0,0],[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]], cover:'hard', rotStep:60, draw:drawHQ },
-};
 
 /* =========================================================================
    MAP RENDERING
    ========================================================================= */
 function drawMap(ctx, opt) {
-  const W = gridW(), H = gridH();
-  ctx.fillStyle = '#1a1f27'; ctx.fillRect(0, 0, W, H);
-  if (bgImg) { ctx.globalAlpha = S.bgOpacity; ctx.drawImage(bgImg, 0, 0, W, H); ctx.globalAlpha = 1; }
-
-  // cover fills, batched per type
-  for (const type of ['light', 'hard']) {
-    const fill = new Path2D(), ring = new Path2D(); let any = false;
-    for (const k in S.cells) {
-      if (S.cells[k] !== type) continue;
-      const [c, r] = k.split(',').map(Number), a = offToAx(c, r), p = axToPx(a.q, a.r);
-      hexSub(fill, p.x, p.y, HEX); hexSub(ring, p.x, p.y, HEX*0.78); any = true;
-    }
-    if (!any) continue;
-    ctx.fillStyle = COVER[type].fill; ctx.fill(fill);
-    ctx.strokeStyle = COVER[type].ring; ctx.lineWidth = HEX*0.05; ctx.stroke(ring);
-  }
-
-  if (S.showGrid) {
-    const g = new Path2D();
-    for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) { const a = offToAx(c, r), p = axToPx(a.q, a.r); hexSub(g, p.x, p.y, HEX); }
-    ctx.strokeStyle = `rgba(210,225,245,${S.gridOpacity})`; ctx.lineWidth = opt.lw; ctx.stroke(g);
-  }
-
-  for (const o of S.objects) {
-    const T = TEMPLATES[o.type]; if (!T) continue;
-    ctx.save(); T.draw(ctx, footprint(o.type, o.q, o.r, o.rot), HEX, o); ctx.restore();
-  }
-
-  ctx.strokeStyle = 'rgba(255,107,61,0.5)'; ctx.lineWidth = opt.lw * 1.5; ctx.strokeRect(0, 0, W, H);
+  drawMapLayers(ctx, opt.lw);
 
   if (!opt.live || !ui.hover || ui.panning) return;
   const h = ui.hover;
@@ -644,12 +269,19 @@ function drawMap(ctx, opt) {
     footprintPath(ctx, cells, HEX);
     ctx.fillStyle = ok ? 'rgba(79,209,255,0.12)' : 'rgba(255,60,60,0.4)'; ctx.fill();
     ctx.strokeStyle = ok ? '#4fd1ff' : '#ff4b4b'; ctx.lineWidth = opt.lw * 2; ctx.stroke();
+  } else if (ui.tool === 'climb') {
+    const E = ui.hoverEdge; if (!E) return;
+    const [A, B] = edgeEnds(E.key), has = !!S.edges[E.key];
+    ctx.save(); ctx.globalAlpha = has ? 1 : 0.6; drawClimb(ctx, A, B); ctx.restore();
+    ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]);
+    ctx.strokeStyle = has ? '#ff6b3d' : '#4fd1ff'; ctx.lineWidth = opt.lw * 3; ctx.stroke();
   } else if (ui.tool !== 'pan') {
     const p = new Path2D();
     brushCells(h, ui.brush).forEach(c => { if (inB(c.q, c.r)) { const x = axToPx(c.q, c.r); hexSub(p, x.x, x.y, HEX); } });
-    const col = { light:'rgba(70,185,85,0.3)', hard:'rgba(30,33,38,0.45)', erase:'rgba(255,107,61,0.18)' }[ui.tool];
+    const Z = ZONES[ui.tool];
+    const col = Z ? `rgba(${Z.col},0.3)` : { light:'rgba(70,185,85,0.3)', hard:'rgba(30,33,38,0.45)', erase:'rgba(255,107,61,0.18)', difficult:'rgba(214,160,90,0.3)', dangerous:'rgba(236,84,60,0.3)' }[ui.tool];
     ctx.fillStyle = col; ctx.fill(p);
-    ctx.strokeStyle = ui.tool === 'erase' ? '#ff6b3d' : '#4fd1ff'; ctx.lineWidth = opt.lw * 2; ctx.stroke(p);
+    ctx.strokeStyle = Z ? `rgb(${Z.col})` : ui.tool === 'erase' ? '#ff6b3d' : '#4fd1ff'; ctx.lineWidth = opt.lw * 2; ctx.stroke(p);
   }
 }
 
@@ -672,51 +304,6 @@ function fitView() {
   requestRender();
 }
 
-/* =========================================================================
-   STORAGE  (IndexedDB autosave, falls back to localStorage)
-   ========================================================================= */
-// Some browsers never answer IndexedDB requests on file:// pages, so give up after a short wait.
-// Both stores are read on load and the newest save wins.
-const store = {
-  db: null,
-  async init() {
-    try {
-      this.db = await new Promise((res, rej) => {
-        setTimeout(() => rej(new Error('IndexedDB timed out')), 1500);
-        const rq = indexedDB.open('lancer-hexmap', 1);
-        rq.onupgradeneeded = () => rq.result.createObjectStore('maps');
-        rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error);
-      });
-    } catch (e) { console.warn('IndexedDB unavailable, using localStorage', e); this.db = null; }
-  },
-  idbGet(k) {
-    return new Promise((res, rej) => {
-      const rq = this.db.transaction('maps').objectStore('maps').get(k);
-      rq.onsuccess = () => res(rq.result || null); rq.onerror = () => rej(rq.error);
-    });
-  },
-  idbPut(k, v) {
-    return new Promise((res, rej) => {
-      const tx = this.db.transaction('maps', 'readwrite'); tx.objectStore('maps').put(v, k);
-      tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
-    });
-  },
-  async get(k) {
-    let a = null, b = null;
-    if (this.db) try { a = await this.idbGet(k); } catch (e) { console.warn(e); }
-    try { const v = localStorage.getItem('lhm_' + k); b = v ? JSON.parse(v) : null; } catch (e) { console.warn(e); }
-    if (!a || !b) return a || b;
-    return (b.savedAt || 0) > (a.savedAt || 0) ? b : a;
-  },
-  async put(k, v) {
-    v.savedAt = Date.now();
-    if (this.db) {
-      try { await this.idbPut(k, v); try { localStorage.removeItem('lhm_' + k); } catch (e) {} return; }
-      catch (e) { console.warn('IndexedDB save failed, trying localStorage', e); }
-    }
-    localStorage.setItem('lhm_' + k, JSON.stringify(v));
-  },
-};
 let saveTimer = null, dirty = false;
 const $ = id => document.getElementById(id);
 function setSaveStatus(t, cls) { const el = $('stSave'); el.textContent = t; el.className = cls || ''; }
@@ -732,9 +319,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && S &
 /* =========================================================================
    EDITING ACTIONS
    ========================================================================= */
-const snap = () => JSON.stringify({ cells: S.cells, objects: S.objects, nextId: S.nextId });
+const snap = () => JSON.stringify({ cells: S.cells, zones: S.zones, effects: S.effects, edges: S.edges, objects: S.objects, nextId: S.nextId });
 function pushUndo() { undoStack.push(snap()); if (undoStack.length > 200) undoStack.shift(); redoStack = []; updateUndoBtns(); }
-function restoreSnap(j) { const d = JSON.parse(j); S.cells = d.cells; S.objects = d.objects; S.nextId = d.nextId; changed(); }
+function restoreSnap(j) { const d = JSON.parse(j); S.cells = d.cells; S.zones = d.zones || {}; S.effects = d.effects || {}; S.edges = d.edges || {}; S.objects = d.objects; S.nextId = d.nextId; changed(); }
 function undo() { if (!undoStack.length) return; redoStack.push(snap()); restoreSnap(undoStack.pop()); updateUndoBtns(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snap()); restoreSnap(redoStack.pop()); updateUndoBtns(); }
 function updateUndoBtns() { $('btnUndo').disabled = !undoStack.length; $('btnRedo').disabled = !redoStack.length; }
@@ -742,14 +329,31 @@ function updateUndoBtns() { $('btnUndo').disabled = !undoStack.length; $('btnRed
 function changed() { requestRender(); scheduleSave(); updateCounts(); }
 function updateCounts() {
   let l = 0, h = 0; for (const k in S.cells) S.cells[k] === 'light' ? l++ : h++;
-  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Templates: ${S.objects.length}`;
+  let dz = 0, ez = 0; for (const k in S.zones) S.zones[k] === 'deploy' ? dz++ : ez++;
+  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Deploy: ${dz} · Extract: ${ez} · Difficult: ${Object.values(S.effects).filter(v => v === 'difficult').length} · Dangerous: ${Object.values(S.effects).filter(v => v === 'dangerous').length} · Climbs: ${Object.keys(S.edges).length} · Templates: ${S.objects.length}`;
 }
 function paintAt(h) {
   const k = h.q + ',' + h.r; if (k === ui.lastPaintKey) return; ui.lastPaintKey = k;
   brushCells(h, ui.brush).forEach(c => {
     if (!inB(c.q, c.r)) return; const key = keyOf(c.q, c.r);
-    if (ui.paintMode === 'erase') delete S.cells[key]; else S.cells[key] = ui.paintMode;
+    if (ui.paintMode === 'erase') {
+      delete S.cells[key]; delete S.zones[key]; delete S.effects[key];
+      DIRS.forEach(([dq, dr]) => delete S.edges[edgeKey(c, { q: c.q + dq, r: c.r + dr })]);
+    }
+    else if (ui.paintMode === 'difficult' || ui.paintMode === 'dangerous') S.effects[key] = ui.paintMode;
+    else if (ZONES[ui.paintMode]) S.zones[key] = ui.paintMode;
+    else S.cells[key] = ui.paintMode;
   });
+  changed();
+}
+// Climb borders: only borders between two hexes on the map count
+function edgeAt(e, maxDist) {
+  const w = worldAt(e), E = edgeNear(w.x, w.y);
+  return inB(E.a.q, E.a.r) && inB(E.b.q, E.b.r) && (maxDist == null || E.dist <= maxDist) ? E : null;
+}
+function paintEdge(E) {
+  if (!E || E.key === ui.lastPaintKey) return; ui.lastPaintKey = E.key;
+  if (ui.paintMode === 'add') S.edges[E.key] = 'climb'; else delete S.edges[E.key];
   changed();
 }
 function objectAt(h) {
@@ -803,6 +407,12 @@ cv.addEventListener('pointerdown', e => {
   if (e.button === 1 || (e.button === 0 && (ui.space || ui.tool === 'pan'))) {
     ui.panning = true; ui.last = { x: e.clientX, y: e.clientY }; updateCursor(); requestRender(); return;
   }
+  if (ui.tool === 'climb' && (e.button === 0 || e.button === 2)) {
+    const E = edgeAt(e); if (!E) return;
+    // the first border decides whether this drag adds climbs or removes them; right-drag always removes
+    pushUndo(); ui.painting = true; ui.paintMode = e.button === 2 || S.edges[E.key] ? 'remove' : 'add';
+    ui.lastPaintKey = null; paintEdge(E); return;
+  }
   const h = hexAt(e); if (!h) return;
   if (e.button === 2) {
     const i = objectAt(h);
@@ -819,6 +429,12 @@ cv.addEventListener('pointermove', e => {
   const h = hexAt(e);
   const prev = ui.hover; ui.hover = h;
   if (h) { const o = axToOff(h.q, h.r); $('stHex').textContent = `Hex ${o.c + 1}, ${o.r + 1}`; } else $('stHex').textContent = 'Hex —';
+  if (ui.tool === 'climb') {
+    const E = edgeAt(e), pk = ui.hoverEdge && ui.hoverEdge.key; ui.hoverEdge = E;
+    if (ui.painting) paintEdge(edgeAt(e, HEX*0.45));
+    if ((E && E.key) !== pk) requestRender();
+    return;
+  }
   if (ui.painting && h) paintAt(h);
   if (!prev || !h || prev.q !== h.q || prev.r !== h.r) requestRender();
 });
@@ -847,6 +463,8 @@ window.addEventListener('keydown', e => {
   }
   if (k === ' ') { e.preventDefault(); if (!ui.space) { ui.space = true; updateCursor(); } return; }
   if (k === '1') setTool('light'); else if (k === '2') setTool('hard'); else if (k === '3') setTool('erase'); else if (k === '4') setTool('pan');
+  else if (k === '5') setTool('deploy'); else if (k === '6') setTool('extract');
+  else if (k === '7') setTool('difficult'); else if (k === '8') setTool('climb'); else if (k === '9') setTool('dangerous');
   else if (k === 'r') rotate(e.shiftKey ? -1 : 1);
   else if (k === 'f') fitView();
   else if (k === 'escape') setTool('light');
@@ -856,28 +474,6 @@ window.addEventListener('keyup', e => { if (e.key === ' ') { if (!typing(e)) e.p
 /* =========================================================================
    FILES: images, export, save/load
    ========================================================================= */
-function readImageFile(file) {
-  return new Promise((res, rej) => {
-    const fr = new FileReader();
-    fr.onerror = () => rej(new Error('Could not read file'));
-    fr.onload = () => {
-      const img = new Image();
-      img.onerror = () => rej(new Error('That file is not a supported image'));
-      img.onload = () => {
-        // keep saves small enough for browser storage: shrink/compress big images
-        const MAX = 3000; let url = fr.result;
-        if (Math.max(img.width, img.height) > MAX || url.length > 2500000) {
-          const k = Math.min(1, MAX / Math.max(img.width, img.height)), c = document.createElement('canvas');
-          c.width = Math.round(img.width*k); c.height = Math.round(img.height*k);
-          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); url = c.toDataURL('image/jpeg', 0.9);
-        }
-        res({ url, w: img.width, h: img.height });
-      };
-      img.src = fr.result;
-    };
-    fr.readAsDataURL(file);
-  });
-}
 function loadBgImage() {
   bgImg = null; if (!S.bg) { requestRender(); return; }
   const img = new Image(); img.onload = () => { bgImg = img; requestRender(); }; img.src = S.bg;
@@ -894,19 +490,6 @@ function exportPNG() {
   c.toBlob(b => { download(b, safeName() + '.png'); toast('PNG exported'); });
 }
 function saveToFile() { download(new Blob([JSON.stringify(S)], { type: 'application/json' }), safeName() + '.hexmap.json'); toast('Map file saved'); }
-function normalizeMap(d) {
-  if (!d || typeof d !== 'object' || !(d.cols >= 1) || !(d.rows >= 1)) throw new Error('Not a valid map file');
-  return {
-    version: 1, name: String(d.name || 'Untitled map'),
-    cols: Math.min(100, Math.round(d.cols)), rows: Math.min(100, Math.round(d.rows)),
-    bg: typeof d.bg === 'string' ? d.bg : null,
-    bgOpacity: typeof d.bgOpacity === 'number' ? d.bgOpacity : 1,
-    showGrid: d.showGrid !== false, gridOpacity: typeof d.gridOpacity === 'number' ? d.gridOpacity : 0.45,
-    cells: d.cells && typeof d.cells === 'object' ? d.cells : {},
-    objects: Array.isArray(d.objects) ? d.objects.filter(o => o && TEMPLATES[o.type]) : [],
-    nextId: d.nextId || (Array.isArray(d.objects) ? d.objects.length + 1 : 1),
-  };
-}
 
 /* =========================================================================
    MENU
@@ -952,7 +535,7 @@ $('btnCreate').onclick = () => {
     version: 1, name: $('mName').value.trim() || 'New Battlefield',
     cols: clampInt($('mCols').value, 4, 100, 20), rows: clampInt($('mRows').value, 4, 100, 15),
     bg: pendingBg ? pendingBg.url : null, bgOpacity: 1, showGrid: true, gridOpacity: 0.45,
-    cells: {}, objects: [], nextId: 1,
+    cells: {}, zones: {}, effects: {}, edges: {}, objects: [], nextId: 1,
   });
 };
 $('btnContinue').onclick = () => { if (savedMap) startEditor(normalizeMap(savedMap)); };
@@ -1022,29 +605,43 @@ $('btnRedo').onclick = redo;
 $('btnFit').onclick = fitView;
 $('btnExport').onclick = exportPNG;
 $('btnSaveFile').onclick = saveToFile;
-$('btnMenu').onclick = async () => { await saveNow(); S = null; bgImg = null; showMenu(); };
+$('btnMenu').onclick = async () => { await saveNow(); S = null; bgImg = null; $('btnBackToBattle').hidden = true; showMenu(); };
+$('btnBackToBattle').onclick = async () => { await saveNow(); location.href = 'Battlemap.html?from=editor'; };
 $('btnClear').onclick = () => {
-  if (!confirm('Remove all cover and templates from this map? (You can undo this.)')) return;
-  pushUndo(); S.cells = {}; S.objects = []; changed();
+  if (!confirm('Remove all cover, zones, effects and templates from this map? (You can undo this.)')) return;
+  pushUndo(); S.cells = {}; S.zones = {}; S.effects = {}; S.edges = {}; S.objects = []; changed();
 };
 $('btnResize').onclick = () => {
   const c = clampInt($('eCols').value, 4, 100, S.cols), r = clampInt($('eRows').value, 4, 100, S.rows);
   $('eCols').value = c; $('eRows').value = r;
   if (c === S.cols && r === S.rows) return;
   const old = { cols: S.cols, rows: S.rows }; S.cols = c; S.rows = r;
-  const keepCells = Object.keys(S.cells).filter(k => { const [cc, rr2] = k.split(',').map(Number); return cc < c && rr2 < r; });
+  const inside = k => { const [cc, rr2] = k.split(',').map(Number); return cc < c && rr2 < r; };
+  const keepCells = Object.keys(S.cells).filter(inside), keepZones = Object.keys(S.zones).filter(inside);
+  const keepFx = Object.keys(S.effects).filter(inside), keepEdges = Object.keys(S.edges).filter(k => k.split('|').every(inside));
   const keepObjs = S.objects.filter(o => footprint(o.type, o.q, o.r, o.rot).every(x => inB(x.q, x.r)));
-  const lost = Object.keys(S.cells).length - keepCells.length + S.objects.length - keepObjs.length;
+  const lost = Object.keys(S.cells).length - keepCells.length + Object.keys(S.zones).length - keepZones.length
+    + Object.keys(S.effects).length - keepFx.length + Object.keys(S.edges).length - keepEdges.length + S.objects.length - keepObjs.length;
   if (lost && !confirm(`Shrinking the map will remove ${lost} painted hex(es)/template(s) outside the new edge. Continue?`)) { Object.assign(S, old); return; }
   const cells = {}; keepCells.forEach(k => cells[k] = S.cells[k]);
-  S.cells = cells; S.objects = keepObjs; undoStack = []; redoStack = []; updateUndoBtns();
+  const zones = {}; keepZones.forEach(k => zones[k] = S.zones[k]);
+  const effects = {}; keepFx.forEach(k => effects[k] = S.effects[k]);
+  const edges = {}; keepEdges.forEach(k => edges[k] = S.edges[k]);
+  S.cells = cells; S.zones = zones; S.effects = effects; S.edges = edges; S.objects = keepObjs; undoStack = []; redoStack = []; updateUndoBtns();
   fitView(); changed();
 };
 
 /* =========================================================================
    BOOT
    ========================================================================= */
-store.init().then(showMenu);
+// Opened from the battlemap's "Edit map": go straight to its map, with a way back
+const fromBattle = new URLSearchParams(location.search).get('from') === 'battle';
+history.replaceState(null, '', location.pathname);
+store.init().then(async () => {
+  const m = fromBattle && await store.get('autosave').catch(() => null);
+  if (!m) { showMenu(); return; }
+  startEditor(normalizeMap(m)); $('btnBackToBattle').hidden = false;
+});
 </script>
 </body>
 </html>

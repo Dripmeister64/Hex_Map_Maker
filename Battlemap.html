@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lancer Battlemap</title>
+<style>
+:root{
+  --bg:#0d1015; --panel:#151a21; --panel2:#1c232d; --line:#2a3340; --text:#d8dfe8;
+  --muted:#8693a3; --accent:#ff6b3d; --accent2:#4fd1ff;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:"Segoe UI",system-ui,sans-serif;font-size:14px;overflow:hidden}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:.06em}
+.muted{color:var(--muted);font-size:12px}
+kbd{font-family:Consolas,monospace;font-size:11px;color:var(--muted);border:1px solid var(--line);
+  border-radius:3px;padding:0 4px;margin-left:auto}
+input[type=text],input[type=password],input:not([type]){background:#0f1319;color:var(--text);
+  border:1px solid var(--line);border-radius:5px;padding:7px 9px;font:inherit;width:100%}
+input:focus{outline:none;border-color:var(--accent2)}
+input[type=range]{width:100%;accent-color:var(--accent2)}
+input[type=checkbox]{accent-color:var(--accent2)}
+.btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;
+  padding:7px 12px;cursor:pointer;font:inherit;white-space:nowrap}
+.btn:hover{border-color:#41506a;background:#232c39}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#170d08;font-weight:600}
+.btn.primary:hover{background:#ff8458}
+.btn.danger:hover{border-color:#c0392b;background:#3a1a17}
+.btn.small{padding:4px 9px;font-size:12px}
+
+/* ---------- MENU ---------- */
+#menu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at 30% 20%,#1b2633 0%,#0d1015 60%);overflow:auto;padding:20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:28px 30px;width:480px;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);position:relative}
+.card::before{content:"";position:absolute;left:0;top:0;right:0;height:3px;border-radius:12px 12px 0 0;
+  background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.brand{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.logo{font-size:38px;color:var(--accent);line-height:1}
+.brand h1{font-size:22px}
+.brand .sub{color:var(--muted);font-size:12px;letter-spacing:.15em;text-transform:uppercase}
+.continue{display:flex;align-items:center;gap:12px;justify-content:space-between;background:#1a2430;
+  border:1px solid #2c4256;border-radius:8px;padding:12px 14px;margin-bottom:10px}
+.actions{display:flex;justify-content:space-between;gap:10px;margin-top:22px}
+#dropHint{margin-top:14px;text-align:center}
+
+/* ---------- BATTLE ---------- */
+#battle{position:fixed;inset:0;display:none;grid-template-columns:260px 1fr;grid-template-rows:50px 1fr 28px;
+  grid-template-areas:"top top" "side stage" "status status"}
+#topbar{grid-area:top;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--panel);
+  border-bottom:1px solid var(--line)}
+#topbar .logo{font-size:26px}
+#bName{font-weight:600;font-size:15px;padding:0 8px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grow{flex:1}
+.sep{width:1px;height:24px;background:var(--line);margin:0 4px}
+#sidebar{grid-area:side;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;overflow-x:hidden;padding:6px 12px 20px}
+#sidebar section{padding:12px 0;border-bottom:1px solid var(--line)}
+#sidebar section:last-child{border-bottom:none}
+#sidebar h3{font-size:11px;color:var(--accent2);text-transform:uppercase;letter-spacing:.18em;margin-bottom:10px}
+#sidebar label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+#sidebar label.chk{display:flex;align-items:center;gap:7px;color:var(--text);font-size:13px}
+.tools{display:grid;gap:5px}
+.tool{display:flex;align-items:center;gap:9px;text-align:left}
+.tool .ic{width:16px;text-align:center;color:var(--accent)}
+.tool.active,.seg button.active{border-color:var(--accent2);background:#18293a;box-shadow:inset 0 0 0 1px var(--accent2)}
+.seg{display:flex;gap:4px;margin-top:8px;align-items:center}
+.seg>span{font-size:12px;color:var(--muted);margin-right:4px;min-width:30px}
+.seg button{flex:1;padding-left:4px;padding-right:4px}
+#xVal{min-width:34px;text-align:center;font-family:Consolas,monospace;font-size:15px;font-weight:600}
+.addgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:rgb(var(--c));margin-right:6px;flex:none}
+.btnrow{display:flex;gap:6px;margin-top:8px}.btnrow>*{flex:1}
+.hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45}
+#roster{display:grid;gap:3px}
+#roster button{display:flex;align-items:center;text-align:left;padding:5px 8px;font-size:13px;overflow:hidden}
+#roster button.active{border-color:var(--accent2);background:#18293a}
+#roster .nm{flex:1;overflow:hidden;text-overflow:ellipsis}
+#roster .sz{color:var(--muted);font-size:11px;margin-left:6px}
+#stage{grid-area:stage;position:relative;overflow:hidden;
+  background:#0a0d11 repeating-linear-gradient(0deg,transparent 0 39px,#10151b 39px 40px),
+             repeating-linear-gradient(90deg,transparent 0 39px,#10151b 39px 40px)}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:default;touch-action:none}
+#info{position:absolute;left:12px;bottom:12px;max-width:460px;background:rgba(21,26,33,.94);border:1px solid #33506a;
+  border-radius:8px;padding:9px 13px;font-size:13px;line-height:1.5;pointer-events:none}
+#info b{color:var(--accent)}
+#info .warn{color:#ffb35c}
+#status{grid-area:status;display:flex;align-items:center;gap:18px;padding:0 12px;background:var(--panel);
+  border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+#stSave.ok{color:#6fd18a}#stSave.bad{color:#ff6b6b}
+#toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:#1e2a36;border:1px solid #33506a;
+  padding:8px 16px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
+#toast.show{opacity:1}
+
+/* ---------- PLAYER VIEW / GM MODE ---------- */
+body:not(.gm) .gm-only, body.gm .player-only{display:none!important}
+#modeBadge{font-size:11px;font-weight:700;letter-spacing:.14em;padding:4px 9px;border-radius:4px;border:1px solid;white-space:nowrap}
+body:not(.gm) #modeBadge{color:var(--accent2);border-color:#2c5a73;background:#122431}
+body.gm #modeBadge{color:#170d08;background:var(--accent);border-color:var(--accent)}
+body.gm #btnGm{border-color:var(--accent);color:#ffb38f}
+body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba(255,107,61,.55);pointer-events:none}
+.can{margin:0;padding-left:18px;font-size:13px;line-height:1.5}
+.can li{margin-bottom:5px}
+.can .dot,.hint .dot{margin:0 3px 0 1px;vertical-align:-1px}
+.btn.wide{width:100%;display:flex;align-items:center;justify-content:center}
+.selhead{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;font-size:14px}
+.selhead .muted{flex-basis:100%;margin-left:17px}
+.readonly{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45}
+#feed{position:absolute;right:12px;top:12px;width:290px;background:rgba(21,26,33,.9);border:1px solid var(--line);
+  border-radius:8px;padding:8px 12px 9px;pointer-events:none}
+#feed h3{font-size:10px;color:var(--accent2);text-transform:uppercase;letter-spacing:.18em;margin-bottom:5px}
+#log{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:12.5px;line-height:1.4}
+#log li:nth-child(n+3){opacity:.7}
+#log .tm{color:var(--muted);font-family:Consolas,monospace;font-size:11px;margin-right:6px}
+#log li.gm{color:#ffb38f}
+.rostercat{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin:8px 0 3px}
+.rostercat:first-child{margin-top:0}
+#roster button.hid{opacity:.55}
+.overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(5,8,12,.72)}
+.dialog{width:380px}
+.dialog h2{font-size:14px;color:var(--accent2);text-transform:uppercase;letter-spacing:.18em;margin-bottom:10px}
+.artdlg{width:760px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column}
+#artGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px;overflow:auto;margin-top:10px;min-height:120px}
+#artGrid button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;font-size:12px;line-height:1.2}
+#artGrid img{width:100%;aspect-ratio:1;object-fit:contain;object-position:bottom;background:#0f1319;border-radius:4px}
+#artGrid button.active{border-color:var(--accent2);box-shadow:inset 0 0 0 1px var(--accent2)}
+.err{color:#ff6b6b;font-size:12px;min-height:18px;margin-top:6px}
+</style>
+</head>
+<body>
+
+<!-- ====================== MENU ====================== -->
+<div id="menu">
+  <div class="card">
+    <div class="brand">
+      <span class="logo">⬡</span>
+      <div><h1>BATTLEMAP</h1><div class="sub">Play your hex maps — Lancer rules</div></div>
+    </div>
+
+    <div class="player-only">
+      <p>No battle is running yet. The GM can unlock the battlemap to start one.</p>
+      <button class="btn primary" id="btnMenuGm">🔒 GM unlock</button>
+    </div>
+    <div class="gm-only">
+      <div id="continueBox" class="continue" hidden>
+        <div><b>Continue last battle</b><div id="continueInfo" class="muted"></div></div>
+        <button class="btn primary" id="btnContinue">Continue</button>
+      </div>
+      <div id="makerBox" class="continue" hidden>
+        <div><b>Use map from the Map Maker</b><div id="makerInfo" class="muted"></div></div>
+        <button class="btn" id="btnUseMaker">Start battle</button>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnLoadFile">Open map or battle file…</button>
+        <a class="btn" href="Map_maker.html" style="text-decoration:none">Map Maker ▸</a>
+      </div>
+      <div id="dropHint" class="muted">You can also drop a <code>.hexmap.json</code> or <code>.battle.json</code> file here.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== BATTLE ====================== -->
+<div id="battle">
+  <header id="topbar">
+    <span class="logo">⬡</span>
+    <span id="bName"></span>
+    <span id="modeBadge">PLAYER VIEW</span>
+    <div class="sep"></div>
+    <button class="btn" id="btnUndo" title="Ctrl+Z">↶ Undo</button>
+    <button class="btn" id="btnRedo" title="Ctrl+Y">↷ Redo</button>
+    <button class="btn" id="btnFit" title="F">⤢ Fit view</button>
+    <button class="btn gm-only" id="btnEditMap" title="Add or change cover and obstacles; the tokens stay put">✎ Edit map</button>
+    <div class="grow"></div>
+    <button class="btn" id="btnClearMeasure" title="Esc">Clear measurement</button>
+    <button class="btn gm-only" id="btnSaveFile" title="Ctrl+S">Save battle to file</button>
+    <button class="btn gm-only" id="btnMenu">Main menu</button>
+    <button class="btn" id="btnGm">🔒 GM</button>
+  </header>
+
+  <aside id="sidebar">
+    <section class="player-only">
+      <h3>What you can do</h3>
+      <ul class="can">
+        <li><b>Drag</b> <span class="dot" style="--c:79,209,255"></span>player and <span class="dot" style="--c:111,209,138"></span>ally tokens to move them. The route and movement cost are shown.</li>
+        <li><b>Right-drag</b> anywhere to measure range and movement.</li>
+        <li><b>Line, Cone, Blast, Burst</b> show what an attack would hit.</li>
+        <li><b>Deploy ally</b> for drones, turrets and other deployables.</li>
+      </ul>
+      <div class="hint"><span class="dot" style="--c:255,90,74"></span>Hostile and <span class="dot" style="--c:214,190,92"></span>neutral tokens are run by the GM. Click one to see what it is.</div>
+    </section>
+    <section class="gm-only">
+      <h3>GM mode</h3>
+      <div class="hint" style="margin-top:0">Everything is unlocked. Hidden tokens look faded to you and are invisible to players. <b>Lock</b> the screen before handing it back.</div>
+    </section>
+
+    <section>
+      <h3>Tools</h3>
+      <div class="tools">
+        <button class="btn tool" data-tool="move"><span class="ic">✥</span>Move tokens<kbd>1</kbd></button>
+        <button class="btn tool" data-tool="line"><span class="ic">━</span>Line<kbd>2</kbd></button>
+        <button class="btn tool" data-tool="cone"><span class="ic">◣</span>Cone<kbd>3</kbd></button>
+        <button class="btn tool" data-tool="blast"><span class="ic">✺</span>Blast<kbd>4</kbd></button>
+        <button class="btn tool" data-tool="burst"><span class="ic">◎</span>Burst<kbd>5</kbd></button>
+      </div>
+      <div class="seg">
+        <span>Size</span>
+        <button class="btn small" id="xDown" title="[">−</button>
+        <span id="xVal">3</span>
+        <button class="btn small" id="xUp" title="]">+</button>
+      </div>
+      <div class="hint" id="toolHint"></div>
+      <div class="hint gm-only"><b>Right-drag</b> anywhere to measure range.</div>
+    </section>
+
+    <section>
+      <h3 class="gm-only">Add token</h3>
+      <h3 class="player-only">Deploy</h3>
+      <div class="addgrid gm-only">
+        <button class="btn small" data-add="pc"><span class="dot" style="--c:79,209,255"></span>Player</button>
+        <button class="btn small" data-add="ally"><span class="dot" style="--c:111,209,138"></span>Ally</button>
+        <button class="btn small" data-add="hostile"><span class="dot" style="--c:255,90,74"></span>Hostile</button>
+        <button class="btn small" data-add="neutral"><span class="dot" style="--c:214,190,92"></span>Neutral</button>
+      </div>
+      <button class="btn wide player-only" data-add="ally"><span class="dot" style="--c:111,209,138"></span>Deploy ally</button>
+      <div class="seg" id="newSizeSeg"><span>Size</span></div>
+      <label class="chk gm-only"><input type="checkbox" id="newHidden"> New tokens start hidden</label>
+    </section>
+
+    <section id="selBox" hidden>
+      <h3>Selected token</h3>
+      <div class="selhead" id="selHead"></div>
+      <div class="readonly" id="selReadonly">Run by the GM. Right-drag from one of your tokens to it to measure the range.</div>
+      <div id="nameRow"><label>Name</label><input id="tName" maxlength="40"></div>
+      <div class="seg gm-only" id="tSideSeg"><span>Side</span></div>
+      <div class="seg" id="tSizeSeg"><span>Size</span></div>
+      <div class="btnrow" id="imgRow">
+        <button class="btn small" id="btnArt" title="Pick from the token art folder">Art…</button>
+        <button class="btn small" id="btnImg" title="Upload a picture for the round token">Image…</button>
+        <button class="btn small" id="btnImgRemove">No image</button>
+      </div>
+      <div class="btnrow" id="actRow">
+        <button class="btn small" id="btnRotate" title="R">⟳ Rotate</button>
+        <button class="btn small" id="btnDup" title="Ctrl+D">Duplicate</button>
+        <button class="btn small danger" id="btnDel" title="Delete">Delete</button>
+      </div>
+      <label class="chk gm-only"><input type="checkbox" id="tHidden"> Hidden from players <kbd>H</kbd></label>
+    </section>
+
+    <section>
+      <h3>Tokens</h3>
+      <div id="roster"></div>
+      <div class="muted" id="rosterEmpty">No tokens on the map yet.</div>
+    </section>
+
+    <section>
+      <h3>Display</h3>
+      <label class="chk"><input type="checkbox" id="showNames" checked> Show token names</label>
+      <label class="chk gm-only"><input type="checkbox" id="hardBlocks" checked> Hard cover blocks movement</label>
+      <label class="chk gm-only"><input type="checkbox" id="showGrid" checked> Show grid lines</label>
+      <div class="gm-only"><label>Grid line opacity</label><input type="range" id="gridOp" min="0.05" max="1" step="0.05"></div>
+    </section>
+  </aside>
+
+  <main id="stage"><canvas id="cv"></canvas><div id="feed" hidden><h3>Recent</h3><ol id="log"></ol></div><div id="info" hidden></div><div id="toast"></div></main>
+
+  <footer id="status">
+    <span id="stHex">Hex —</span>
+    <span class="grow"></span>
+    <span>Right-drag: measure · Drag empty space / middle-drag: pan · Wheel: zoom · [ ]: area size · Esc: clear</span>
+    <span id="stSave"></span>
+  </footer>
+</div>
+
+<!-- ====================== TOKEN ART ====================== -->
+<div id="artDialog" class="overlay" hidden>
+  <div class="card dialog artdlg">
+    <h2>Token art</h2>
+    <input id="artSearch" placeholder="Search, e.g. Drake or Size 2" autocomplete="off">
+    <div id="artGrid"></div>
+    <div class="muted" id="artNote"></div>
+    <div class="actions"><span class="muted">Picking art also sets the token's Size to match its frame.</span>
+      <button type="button" class="btn" id="artClose">Close</button></div>
+  </div>
+</div>
+
+<!-- ====================== GM UNLOCK ====================== -->
+<div id="gmDialog" class="overlay" hidden>
+  <form class="card dialog" id="gmForm" autocomplete="off">
+    <h2>GM unlock</h2>
+    <p class="muted">Enter the GM passcode to unlock every tool. It's shown in the Battlemap terminal window and kept in <code>gm_passcode.txt</code>.</p>
+    <input type="password" id="gmCode" inputmode="numeric" placeholder="Passcode">
+    <div class="err" id="gmErr"></div>
+    <div class="actions">
+      <button type="button" class="btn" id="gmCancel">Cancel</button>
+      <button type="submit" class="btn primary">Unlock</button>
+    </div>
+  </form>
+</div>
+
+<input type="file" id="fileMap" accept=".json,application/json" hidden>
+<input type="file" id="fileImg" accept="image/*" hidden>
+
+<script src="hexmap_core.js"></script>
+<script>
+"use strict";
+let S = null;            // the map being played on (same format as the Map Maker's)
+let bgImg = null;        // decoded background image
+let B = { tokens: [], nextId: 1, log: [] };   // everything placed on top of the map
+const view = { scale: 1, ox: 0, oy: 0 };
+const ui = { tool:'move', X:3, newSize:1, sel:null, hover:null, space:false, panning:false, last:null,
+             drag:null, ruler:null, area:null, showNames:true, hardBlocks:true, gm:false, newHidden:false, trail:null };
+let undoStack = [], redoStack = [];
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+
+/* =========================================================================
+   TOKENS & LANCER RULES
+   ========================================================================= */
+const SIDES = {
+  pc:      { label:'Player',  group:'Players',  col:'79,209,255'  },
+  ally:    { label:'Ally',    group:'Allies',   col:'111,209,138' },
+  hostile: { label:'Hostile', group:'Hostiles', col:'255,90,74'   },
+  neutral: { label:'Neutral', group:'Neutral',  col:'214,190,92'  },
+};
+const SIZES = [0.5, 1, 2, 3, 4];
+const sizeLabel = s => s === 0.5 ? '½' : String(s);
+// Hex footprints by Size: odd sizes centre on a hex, even sizes on the corner where three hexes meet
+// Shapes match the token art frames: Size 2 is one hex above two, Size 4 is rows of 3, 4, 3 and 2
+const TRI = [[0,0],[1,0],[0,1]];
+const TOKEN_FP = {
+  0.5: [[0,0]], 1: [[0,0]], 2: [[0,0],[-1,1],[0,1]], 3: FLOWER,
+  4: [...new Set(TRI.flatMap(([q, r]) => brushCells({ q, r }, 1).map(c => c.q + ',' + c.r)))].map(k => k.split(',').map(Number)),
+};
+const DISC = { 0.5: 0.5, 1: 0.8, 2: 1.2, 3: 1.7, 4: 2.15 };   // token disc radius, in hex radii
+const TOOL_HINTS = {
+  move:  'Drag tokens to move them; they snap to the hexes. The cheapest route and its movement cost are shown. Drag empty space to pan.',
+  movePlayer: '',   // the "What you can do" card already says it
+  line:  'Line X: press on a token (or hex) and drag to aim. X hexes long, 1 wide.',
+  cone:  'Cone X: press on a token and drag to aim. X hexes long, X wide at the far end.',
+  blast: 'Blast X: press on the attacker and drag to the target hex. Shows the range to the centre.',
+  burst: 'Burst X: click a token. Every hex within X of its space, including its own; the user isn\'t hit.',
+};
+
+const hd = (a, b) => (Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs(a.q + a.r - b.q - b.r)) / 2;
+const hkey = c => c.q + ',' + c.r;
+const cellAt = (q, r) => { const p = axToPx(q, r); return { q, r, x: p.x, y: p.y }; };
+function tokenCells(t) {
+  return TOKEN_FP[t.size].map(([dq, dr]) => { const [a, b] = rotAx(dq, dr, t.rot); return cellAt(t.q + a, t.r + b); });
+}
+const tokenById = id => B.tokens.find(t => t.id === id) || null;
+// Player view: players move and edit player and ally tokens, and may only deploy allies.
+// Everything else needs GM mode, and hidden tokens don't exist for players at all.
+const playerSide = t => t.side === 'pc' || t.side === 'ally';
+const seen = t => ui.gm || !t.hidden;
+const canMove = t => ui.gm || playerSide(t);
+const canRemove = t => ui.gm || t.side === 'ally';
+const shown = () => B.tokens.filter(seen);
+function tokenAt(h) {
+  for (let i = B.tokens.length - 1; i >= 0; i--) {
+    const t = B.tokens[i];
+    if (seen(t) && tokenCells(t).some(c => c.q === h.q && c.r === h.r)) return t;
+  }
+  return null;
+}
+const fits = cells => cells.every(c => inB(c.q, c.r));
+
+// An "origin" is a token (follows it if it moves) or a single hex
+function originAt(h) { const t = tokenAt(h); return t ? { token: t.id } : { q: h.q, r: h.r }; }
+function originCells(o) {
+  if (!o) return null;
+  if (o.token != null) { const t = tokenById(o.token); return t ? tokenCells(t) : null; }
+  return [cellAt(o.q, o.r)];
+}
+const originName = o => o && o.token != null ? (tokenById(o.token) || {}).name : null;
+
+// Range in Lancer is counted from the edge of one space to the edge of the other
+function setDist(A, Bc) {
+  let best = { d: Infinity, a: null, b: null };
+  for (const a of A) for (const b of Bc) { const d = hd(a, b); if (d < best.d) best = { d, a, b }; }
+  return best;
+}
+function hexLine(a, b) {
+  const n = hd(a, b), out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = n ? i / n : 0;
+    out.push(axRound(a.q + (b.q - a.q)*t + 1e-6, a.r + (b.r - a.r)*t + 1e-6));
+  }
+  return out;
+}
+function pxFrac(x, y) { const px = x - HEX*SQRT3/2, py = y - HEX; return { q: (px/SQRT3 - py/3) / HEX, r: (2/3 * py) / HEX }; }
+
+// Line X: X hexes in a straight line, leaving from the side of the space facing the target
+function lineArea(F, P, X) {
+  const c = centroid(F); let dx = P.x - c.x, dy = P.y - c.y; const L = Math.hypot(dx, dy);
+  if (L < HEX*0.3) return [];
+  dx /= L; dy /= L;
+  let s = F[0], best = -Infinity;
+  for (const h of F) { const v = (h.x - c.x)*dx + (h.y - c.y)*dy; if (v > best + 1e-6) { best = v; s = h; } }
+  const f0 = pxFrac(s.x, s.y), f1 = pxFrac(s.x + dx, s.y + dy), dq = f1.q - f0.q, dr = f1.r - f0.r;
+  const k = (X + 1) / ((Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2);
+  const inF = new Set(F.map(hkey)), out = [];
+  for (const h of hexLine(s, axRound(s.q + dq*k, s.r + dr*k))) {
+    if (inF.has(hkey(h))) continue;
+    out.push(cellAt(h.q, h.r)); if (out.length === X) break;
+  }
+  return out;
+}
+// Cone X: a triangle of hexes, 1 wide next to the space and X wide X hexes out: row k holds k hexes, all
+// k away from the space. Of the triangles that fit that, the one pointing closest to the cursor wins.
+function coneArea(F, P, X) {
+  const c = centroid(F), want = Math.atan2(P.y - c.y, P.x - c.x);
+  if (Math.hypot(P.x - c.x, P.y - c.y) < HEX*0.3) return [];
+  const inF = new Set(F.map(hkey)), apexes = new Map();
+  for (const h of F) for (const [dq, dr] of DIRS) { const n = { q: h.q + dq, r: h.r + dr }; if (!inF.has(hkey(n))) apexes.set(hkey(n), n); }
+  let best = [], bestDiff = Infinity;
+  for (const A of apexes.values()) for (let d = 0; d < 6; d++) {
+    const D1 = DIRS[d], D2 = DIRS[(d + 1) % 6], cells = []; let ok = true;
+    for (let a = 0; a < X && ok; a++) for (let b = 0; a + b < X; b++) {
+      const q = A.q + a*D1[0] + b*D2[0], r = A.r + a*D1[1] + b*D2[1];
+      if (inF.has(q + ',' + r)) { ok = false; break; }
+      cells.push(cellAt(q, r));
+    }
+    if (!ok || !cells.every(h => { const k = h.q - A.q, l = h.r - A.r; return setDist(F, [h]).d === 1 + hd({ q: 0, r: 0 }, { q: k, r: l }); })) continue;
+    const m = centroid(cells); let diff = Math.abs(Math.atan2(m.y - c.y, m.x - c.x) - want);
+    if (diff > Math.PI) diff = TAU - diff;
+    if (diff < bestDiff - 1e-9) { bestDiff = diff; best = cells; }
+  }
+  return best;
+}
+// Burst X: every hex within X of the space, including the space itself (the user isn't hit by their own burst)
+function burstArea(F, X) {
+  const out = new Map();
+  for (const h of F) for (const c of brushCells(h, X)) out.set(hkey(c), cellAt(c.q, c.r));
+  return [...out.values()];
+}
+
+// Movement (Lancer): a step costs 1, or 2 if any hex the token steps into is difficult terrain or any part of
+// it crosses a climb (they don't stack). Dangerous terrain costs nothing extra, but routes avoid it if they can.
+function stepInfo(cells, dq, dr) {
+  const own = new Set(cells.map(hkey)), to = cells.map(c => ({ q: c.q + dq, r: c.r + dr }));
+  const entered = to.filter(c => !own.has(hkey(c))), fx = c => S.effects[keyOf(c.q, c.r)];
+  const difficult = entered.some(c => fx(c) === 'difficult'), dangerous = entered.some(c => fx(c) === 'dangerous');
+  const climb = cells.some((c, i) => S.edges[edgeKey(c, to[i])] === 'climb');
+  return { cost: difficult || climb ? 2 : 1, difficult, climb, dangerous };
+}
+// Other characters: anyone who isn't an ally blocks the way if they are the mover's Size or larger, and moving
+// next to a hostile of that Size stops movement (engagement) unless the mover started next to them.
+// Only characters the viewer can see count, so hidden tokens give nothing away.
+const team = t => t.side === 'pc' || t.side === 'ally' ? 'friendly' : t.side;
+const hostileTo = (a, b) => (team(a) === 'friendly' && b.side === 'hostile') || (a.side === 'hostile' && team(b) === 'friendly');
+const othersSig = t => t.id == null ? '' : shown().filter(o => o.id !== t.id).map(o => [o.id, o.q, o.r, o.size, o.rot, o.side]).join(';');
+let pathMemo = { key: null, val: null };
+function moveRules(t, from, to) {
+  const fp = TOKEN_FP[t.size].map(([dq, dr]) => rotAx(dq, dr, t.rot));
+  const cellsAt = (q, r) => fp.map(([a, b]) => ({ q: q + a, r: r + b }));
+  const start = cellsAt(from.q, from.r), end = cellsAt(to.q, to.r);
+  // the start and end positions are always allowed (e.g. standing on a roof); the warnings explain the rest
+  const own = new Set([...start, ...end].map(hkey));
+  const others = t.id == null ? [] : shown().filter(o => o.id !== t.id);
+  const blockers = new Set(), zone = new Map();
+  for (const o of others) {
+    const oc = tokenCells(o);
+    if (team(o) !== team(t) && o.size >= t.size) oc.forEach(c => blockers.add(hkey(c)));
+    if (hostileTo(t, o) && o.size >= t.size && setDist(start, oc).d > 1)
+      for (const c of oc) for (const [dq, dr] of DIRS) { const k = (c.q + dq) + ',' + (c.r + dr); if (!zone.has(k)) zone.set(k, o); }
+  }
+  const openMemo = new Map();
+  const open = (q, r) => {
+    const k = q + ',' + r; let v = openMemo.get(k);
+    if (v === undefined) openMemo.set(k, v = cellsAt(q, r).every(c => {
+      const ck = hkey(c);
+      return inB(c.q, c.r) && (own.has(ck) || ((!ui.hardBlocks || S.cells[keyOf(c.q, c.r)] !== 'hard') && !blockers.has(ck)));
+    }));
+    return v;
+  };
+  const engagedBy = (q, r) => { for (const c of cellsAt(q, r)) { const o = zone.get(hkey(c)); if (o) return o; } return null; };
+  // the route as a list of token positions, with what each step cost and anything the table should know
+  const result = path => {
+    const steps = path.slice(1).map((n, i) => ({ ...stepInfo(cellsAt(path[i].q, path[i].r), n.q - path[i].q, n.r - path[i].r), q: n.q, r: n.r }));
+    const cost = steps.reduce((a, st) => a + st.cost, 0), last = path[path.length - 1], endSet = new Set(cellsAt(last.q, last.r).map(hkey));
+    return {
+      cost, hexes: steps.length, extra: cost - steps.length, path, steps, fp,
+      danger: steps.filter(st => st.dangerous).length,
+      engagedBy: steps.length ? engagedBy(last.q, last.r) : null,
+      occupied: steps.length ? shown().filter(o => o.id !== t.id && tokenCells(o).some(c => endSet.has(hkey(c)))) : [],
+      overwatch: steps.length ? others.filter(o => hostileTo(t, o) && setDist(start, tokenCells(o)).d === 1) : [],
+    };
+  };
+  return { cellsAt, open, engagedBy, result };
+}
+function movePath(t, from, to) {
+  const key = [t.id, t.size, t.rot, from.q, from.r, to.q, to.r, ui.hardBlocks, othersSig(t)].join();
+  if (pathMemo.key === key) return pathMemo.val;
+  const { cellsAt, open, engagedBy, result } = moveRules(t, from, to);
+  // weights are 512 × movement cost, +1 per step into dangerous terrain: the cheapest route first, then the safest
+  let val = null;
+  const dist = new Map([[hkey(from), 0]]), prev = new Map(), buckets = [[from]];
+  search: for (let d = 0; d < buckets.length; d++) for (const p of buckets[d] || []) {
+    if (dist.get(hkey(p)) !== d) continue;
+    if (p.q === to.q && p.r === to.r) {
+      const path = [p]; for (let k = hkey(p); prev.has(k); k = hkey(path[0])) path.unshift(prev.get(k));
+      val = result(path);
+      break search;
+    }
+    if (p !== from && engagedBy(p.q, p.r)) continue;   // engagement stops movement here
+    const cells = cellsAt(p.q, p.r);
+    for (const [dq, dr] of DIRS) {
+      const n = { q: p.q + dq, r: p.r + dr }, nk = hkey(n);
+      if (!open(n.q, n.r)) continue;
+      const st = stepInfo(cells, dq, dr), nd = d + st.cost*512 + (st.dangerous ? 1 : 0);
+      if (dist.has(nk) && dist.get(nk) <= nd) continue;
+      dist.set(nk, nd); prev.set(nk, p); (buckets[nd] = buckets[nd] || []).push(n);
+    }
+  }
+  pathMemo = { key, val };
+  return val;
+}
+// Moving along the measured straight line instead; null if something blocks it or engagement stops it early
+function straightPath(t, from, to) {
+  const { open, engagedBy, result } = moveRules(t, from, to), path = hexLine(from, to);
+  const ok = path.slice(1).every((p, i) => open(p.q, p.r) && (i === path.length - 2 || !engagedBy(p.q, p.r)));
+  return ok ? result(path) : null;
+}
+const moveText = m => m ? `Move ${m.cost}` + (m.extra ? ` (${m.hexes} + ${m.extra} extra)` : '') : 'No clear path';
+function moveDetail(m) {
+  if (!m || !m.extra) return '';
+  const d = m.steps.filter(s => s.difficult).length, c = m.steps.filter(s => s.climb).length;
+  return [d && `${d} into difficult terrain`, c && `${c} climb${c > 1 ? 's' : ''}`].filter(Boolean).join(', ');
+}
+const names = list => list.map(o => esc(o.name)).join(', ');
+function moveWarnings(m) {
+  if (!m) return [];
+  const w = [];
+  if (m.engagedBy) w.push(`Engaged by ${esc(m.engagedBy.name)}: movement stops here`);
+  if (m.occupied.length) w.push(`Can't end a move in ${names(m.occupied)}'s space`);
+  if (m.danger) w.push(`Enters dangerous terrain: Engineering check or take 5 damage`);
+  if (m.overwatch.length) w.push(`Starts next to ${names(m.overwatch)}: may provoke Overwatch`);
+  return w;
+}
+
+// Lancer cover against ranged attacks. Hard cover: the target is next to hard cover and every line from the
+// attacker's space to the target's passes through hard cover (otherwise the target is flanked). Soft cover: the
+// line between their centres passes light cover, or hard cover the target isn't next to.
+function coverBetween(A, T) {
+  const skip = new Set([...A, ...T].map(hkey)), cover = c => skip.has(hkey(c)) ? null : S.cells[keyOf(c.q, c.r)];
+  const blocked = (a, b, e) => {
+    const n = hd(a, b);
+    for (let i = 1; i < n; i++) { const h = axRound(a.q + (b.q - a.q)*i/n + e, a.r + (b.r - a.r)*i/n + e); if (cover(h) === 'hard') return true; }
+    return false;
+  };
+  const nextToHard = T.some(c => DIRS.some(([dq, dr]) => cover({ q: c.q + dq, r: c.r + dr }) === 'hard'));
+  const clear = A.some(a => T.some(b => !blocked(a, b, 1e-6) || !blocked(a, b, -1e-6)));
+  if (nextToHard && !clear) return { kind: 'hard', flanked: false };
+  const ca = centroid(A), cb = centroid(T), n = Math.ceil(Math.hypot(cb.x - ca.x, cb.y - ca.y) / (HEX*0.2));
+  for (let i = 1; i < n; i++) {
+    const h = pxToAx(ca.x + (cb.x - ca.x)*i/n, ca.y + (cb.y - ca.y)*i/n);
+    if (cover(h)) return { kind: 'soft', flanked: nextToHard };
+  }
+  return { kind: null, flanked: nextToHard };
+}
+const coverText = c => c.kind === 'hard' ? 'hard cover (+2 Difficulty)' : c.kind === 'soft' ? 'soft cover (+1 Difficulty)'
+  : c.flanked ? 'no cover (flanked)' : 'no cover';
+// Characters next to a hostile are engaged: +1 Difficulty on their ranged attacks
+const engagedWith = t => t && t.id != null ? shown().filter(o => hostileTo(t, o) && setDist(tokenCells(t), tokenCells(o)).d === 1) : [];
+
+function drawMovePath(ctx, m, col, marksOnly) {
+  if (!m || m.path.length < 2) return;
+  const mid = p => centroid(m.fp.map(([a, b]) => cellAt(p.q + a, p.r + b)));
+  if (!marksOnly) {
+    ctx.beginPath(); m.path.forEach((p, i) => { const c = mid(p); i ? ctx.lineTo(c.x, c.y) : ctx.moveTo(c.x, c.y); });
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.setLineDash([HEX*0.06, HEX*0.16]);
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = HEX*0.14; ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = HEX*0.08; ctx.stroke(); ctx.setLineDash([]);
+  }
+  m.steps.forEach(s => { if (s.cost > 1) { const c = mid(s); pill(ctx, c.x, c.y, '+1', HEX*0.28, `rgb(${EFFECTS.difficult.col})`, 'rgba(60,38,12,0.9)'); } });
+}
+
+// The current area template: which hexes it covers and who it hits
+function computeArea() {
+  const A = ui.area; if (!A) return null;
+  const F = originCells(A.origin);
+  let cells = [], range = null, center = null;
+  if (A.kind === 'blast') {
+    center = pxToAx(A.P.x, A.P.y);
+    cells = brushCells(center, A.X).map(c => cellAt(c.q, c.r));
+    if (F && A.origin.token != null) range = setDist(F, [center]).d;
+  } else {
+    if (!F) return null;
+    cells = A.kind === 'line' ? lineArea(F, A.P, A.X) : A.kind === 'cone' ? coneArea(F, A.P, A.X) : burstArea(F, A.X);
+  }
+  cells = cells.filter(c => inB(c.q, c.r));
+  const set = new Set(cells.map(hkey)), self = A.kind !== 'blast' && A.origin ? A.origin.token : null;
+  const hits = shown().filter(t => t.id !== self && tokenCells(t).some(c => set.has(hkey(c))));
+  // cover is worked out from the blast's centre, or from the attacker for the other patterns
+  const from = A.kind === 'blast' ? [cellAt(center.q, center.r)] : F;
+  const covers = new Map(hits.map(t => [t.id, coverBetween(from, tokenCells(t))]));
+  const attacker = A.origin && A.origin.token != null ? tokenById(A.origin.token) : null;
+  return { kind: A.kind, X: A.X, cells, set, hits, covers, range, center, origin: F, engaged: engagedWith(attacker), attacker };
+}
+function computeRuler() {
+  const R = ui.ruler; if (!R || !R.to) return null;
+  const Fa = originCells(R.from), Fb = originCells(R.to); if (!Fa || !Fb) return null;
+  const { d, a, b } = setDist(Fa, Fb);
+  const skip = new Set([...Fa, ...Fb].map(hkey));
+  const path = hexLine(a, b).slice(1).map(h => cellAt(h.q, h.r));
+  const cover = { light: 0, hard: 0 };
+  path.forEach(c => { if (skip.has(hkey(c))) return; const v = S.cells[keyOf(c.q, c.r)]; if (v) cover[v]++; });
+  // movement: the token (or a Size 1 mover) shifted so the hex the ruler started on lands on its end
+  const t = R.from.token != null ? tokenById(R.from.token) : { size: 1, rot: 0, q: R.startHex.q, r: R.startHex.r };
+  const end = { q: t.q + R.toHex.q - R.startHex.q, r: t.r + R.toHex.r - R.startHex.r };
+  // measuring to another character is about range, not moving into their space
+  const toOther = R.to.token != null && R.to.token !== R.from.token;
+  const straight = toOther ? null : straightPath(t, t, end), best = toOther ? null : movePath(t, t, end);
+  // only offer another route when it is actually cheaper than going straight
+  const detour = !!best && (!straight || best.cost < straight.cost);
+  const tA = R.from.token != null ? tokenById(R.from.token) : null, tB = R.to.token != null ? tokenById(R.to.token) : null;
+  const tcover = tA && tB && tA !== tB ? coverBetween(Fa, Fb) : null;
+  return { d, a, b, path, cover, move: detour ? best : straight, detour, straight, from: originName(R.from), to: originName(R.to),
+           tcover, engaged: tcover ? engagedWith(tA) : [], showMove: !toOther };
+}
+
+/* =========================================================================
+   RENDERING
+   ========================================================================= */
+const cv = $('cv'), ctx = cv.getContext('2d');
+const imgCache = new Map();
+function tokenImg(src) {
+  if (!src) return null;
+  let im = imgCache.get(src);
+  if (!im) { im = new Image(); im.onload = requestRender; im.src = src; imgCache.set(src, im); }
+  return im.complete && im.naturalWidth ? im : null;
+}
+function initials(name) {
+  const w = String(name || '?').trim().split(/\s+/).filter(Boolean);
+  if (!w.length) return '?';
+  if (w.length > 1 && /^\d+$/.test(w[w.length - 1])) return (w[0][0] + w[w.length - 1]).toUpperCase().slice(0, 3);
+  return (w.length > 1 ? w[0][0] + w[1][0] : w[0].slice(0, 2)).toUpperCase();
+}
+function pill(ctx, x, y, text, size, col, bg) {
+  ctx.font = `600 ${size}px "Segoe UI",system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const w = ctx.measureText(text).width + size*0.9, h = size*1.5;
+  rr(ctx, x - w/2, y - h/2, w, h, h/2); ctx.fillStyle = bg || 'rgba(12,16,22,0.88)'; ctx.fill();
+  ctx.strokeStyle = col; ctx.lineWidth = size*0.1; ctx.stroke();
+  ctx.fillStyle = '#eef3f8'; ctx.fillText(text, x, y + size*0.04);
+}
+
+// Token art: the frame in the picture is the token's footprint, fitted into the bottom square of the image
+// (taller pictures overflow upwards)
+function artBox(cells) {
+  const xs = cells.map(c => c.x), ys = cells.map(c => c.y), hw = HEX*SQRT3/2;
+  const x0 = Math.min(...xs) - hw, x1 = Math.max(...xs) + hw, y0 = Math.min(...ys) - HEX, y1 = Math.max(...ys) + HEX;
+  return { cx: (x0 + x1)/2, cy: (y0 + y1)/2, w: x1 - x0, h: y1 - y0 };
+}
+function drawArt(ctx, im, cells) {
+  const b = artBox(cells), side = Math.max(b.w, b.h), h = side * im.naturalHeight / im.naturalWidth;
+  ctx.drawImage(im, b.cx - side/2, b.cy + side/2 - h, side, h);
+}
+function drawToken(ctx, t, lw, hit) {
+  const cells = tokenCells(t), col = SIDES[t.side].col, m = centroid(cells), art = tokenImg(t.art);
+  const R = art ? Math.max(...cells.map(c => Math.hypot(c.x - m.x, c.y - m.y))) + HEX*0.95 : DISC[t.size]*HEX;
+  ctx.save(); if (t.hidden) ctx.globalAlpha = 0.45;   // only the GM ever sees hidden tokens
+  if (art) {   // a glow in the side's colour behind the art's own frame
+    footprintPath(ctx, cells, HEX); ctx.fillStyle = `rgba(${col},0.14)`; ctx.fill();
+    strokeEdges(ctx, outerEdges(cells, HEX), HEX*0.26, `rgba(${col},0.7)`);
+    drawArt(ctx, art, cells);
+  } else {
+    if (cells.length > 1) {
+      footprintPath(ctx, cells, HEX); ctx.fillStyle = `rgba(${col},0.16)`; ctx.fill();
+      strokeEdges(ctx, outerEdges(cells, HEX), HEX*0.07, `rgba(${col},0.75)`);
+    }
+    ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.65)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+    circle(ctx, m.x, m.y, R); ctx.fillStyle = '#121820'; ctx.fill(); ctx.restore();
+    const im = tokenImg(t.img);
+    if (im) { ctx.save(); circle(ctx, m.x, m.y, R); ctx.clip(); ctx.drawImage(im, m.x - R, m.y - R, R*2, R*2); ctx.restore(); }
+    else {
+      const g = ctx.createRadialGradient(m.x, m.y - R*0.4, R*0.1, m.x, m.y, R);
+      g.addColorStop(0, `rgba(${col},0.55)`); g.addColorStop(1, `rgba(${col},0.18)`);
+      circle(ctx, m.x, m.y, R); ctx.fillStyle = g; ctx.fill();
+      const txt = initials(t.name);
+      ctx.font = `700 ${R*(txt.length > 2 ? 0.62 : 0.78)}px "Segoe UI",system-ui,sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#f4f8fc'; ctx.fillText(txt, m.x, m.y + R*0.04);
+    }
+    circle(ctx, m.x, m.y, R); ctx.strokeStyle = `rgb(${col})`; ctx.lineWidth = Math.max(R*0.12, HEX*0.07); ctx.stroke();
+  }
+  if (hit) { circle(ctx, m.x, m.y, R + HEX*0.12); ctx.strokeStyle = '#ff6b3d'; ctx.lineWidth = HEX*0.1; ctx.stroke(); }
+  if (ui.sel === t.id) {
+    circle(ctx, m.x, m.y, R + HEX*(hit ? 0.27 : 0.15)); ctx.setLineDash([HEX*0.18, HEX*0.12]);
+    ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = Math.max(lw*2.5, HEX*0.05); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (ui.showNames && t.name) pill(ctx, m.x, m.y + R + HEX*0.22, t.name, HEX*0.26, `rgba(${col},0.9)`);
+  ctx.restore();
+  if (t.hidden) pill(ctx, m.x, m.y - R - HEX*0.18, 'HIDDEN', HEX*0.22, '#ff6b3d', 'rgba(40,16,8,0.9)');
+}
+
+function drawArea(ctx, lw, A) {
+  if (!A || !A.cells.length && !A.origin) return;
+  if (A.cells.length) {
+    footprintPath(ctx, A.cells, HEX); ctx.fillStyle = 'rgba(255,107,61,0.3)'; ctx.fill();
+    strokeEdges(ctx, outerEdges(A.cells, HEX), HEX*0.07, '#ff6b3d');
+  }
+  if (A.origin) { ctx.setLineDash([HEX*0.15, HEX*0.1]); strokeEdges(ctx, outerEdges(A.origin, HEX), HEX*0.06, '#4fd1ff'); ctx.setLineDash([]); }
+  if (A.kind === 'blast' && A.center) {
+    const p = axToPx(A.center.q, A.center.r);
+    ctx.beginPath(); ctx.moveTo(p.x - HEX*0.3, p.y); ctx.lineTo(p.x + HEX*0.3, p.y); ctx.moveTo(p.x, p.y - HEX*0.3); ctx.lineTo(p.x, p.y + HEX*0.3);
+    ctx.strokeStyle = '#ffd2c2'; ctx.lineWidth = HEX*0.06; ctx.stroke();
+    if (A.origin && A.range != null) {
+      const c = centroid(A.origin); ctx.setLineDash([HEX*0.2, HEX*0.15]);
+      ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(p.x, p.y); ctx.strokeStyle = 'rgba(255,210,194,0.7)'; ctx.lineWidth = HEX*0.04; ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+}
+
+function drawRuler(ctx, lw, M, labels) {
+  if (!M) return;
+  const tint = c => { const v = S.cells[keyOf(c.q, c.r)]; return v === 'hard' ? 'rgba(255,90,74,0.45)' : v === 'light' ? 'rgba(120,230,130,0.4)' : 'rgba(79,209,255,0.28)'; };
+  M.path.forEach(c => { ctx.beginPath(); hexSub(ctx, c.x, c.y, HEX*0.86); ctx.fillStyle = tint(c); ctx.fill(); });
+  const a = axToPx(M.a.q, M.a.r), b = axToPx(M.b.q, M.b.r);
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = HEX*0.16; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = HEX*0.07; ctx.stroke();
+  for (const p of [a, b]) { circle(ctx, p.x, p.y, HEX*0.14); ctx.fillStyle = '#4fd1ff'; ctx.fill(); }
+  labels.push({ x: b.x, y: b.y, text: `Range ${M.d}`, col: '#4fd1ff' });
+}
+
+function requestRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(render); } }
+let renderQueued = false, lastInfo = '', dragMove = null;
+function render() {
+  renderQueued = false;
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w*dpr) || cv.height !== Math.round(h*dpr)) { cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!S) return;
+  const lw = 1.2 / view.scale, labels = [];
+  ctx.setTransform(dpr*view.scale, 0, 0, dpr*view.scale, dpr*view.ox, dpr*view.oy);
+  drawMapLayers(ctx, lw);
+
+  if (ui.hover && ui.tool !== 'move' && !ui.panning) {
+    const p = axToPx(ui.hover.q, ui.hover.r); ctx.beginPath(); hexSub(ctx, p.x, p.y, HEX);
+    ctx.strokeStyle = 'rgba(255,107,61,0.8)'; ctx.lineWidth = lw*2; ctx.stroke();
+  }
+  const A = computeArea(), M = computeRuler();
+  drawArea(ctx, lw, A);
+
+  const D = ui.drag && ui.drag.moved ? ui.drag : null;
+  if (D) {   // where the dragged token started
+    const t = tokenById(D.id), from = tokenCells({ ...t, q: D.from.q, r: D.from.r }), b = centroid(tokenCells(t));
+    ctx.setLineDash([HEX*0.15, HEX*0.1]); strokeEdges(ctx, outerEdges(from, HEX), HEX*0.06, 'rgba(255,255,255,0.6)'); ctx.setLineDash([]);
+    const m = dragMove = movePath(t, D.from, t);
+    drawMovePath(ctx, m, 'rgba(255,255,255,0.85)');
+    labels.push({ x: b.x, y: b.y - DISC[t.size]*HEX, text: (m ? moveText(m) : `No clear path (${hd(D.from, t)} straight)`) + (moveWarnings(m).length ? ' ⚠' : ''),
+                  col: m && (m.extra || moveWarnings(m).length) ? `rgb(${EFFECTS.difficult.col})` : '#ffffff' });
+  }
+  if (ui.trail && !D) {   // the last move fades out, so everyone at the table sees what just happened
+    const age = (performance.now() - ui.trail.at) / 6000, t = tokenById(ui.trail.id);
+    if (age >= 1 || !t || !seen(t)) ui.trail = null;
+    else { ctx.save(); ctx.globalAlpha = 1 - age; drawMovePath(ctx, ui.trail.m, 'rgba(255,255,255,0.8)'); ctx.restore(); requestRender(); }
+  }
+  const hit = new Set(A ? A.hits.map(t => t.id) : []);
+  for (const t of shown()) drawToken(ctx, t, lw, hit.has(t.id));
+  drawRuler(ctx, lw, M, labels);
+  if (M && M.move) drawMovePath(ctx, M.move, `rgba(${EFFECTS.difficult.col},0.9)`, !M.detour);
+
+  // labels at a fixed on-screen size
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  for (const L of labels) pill(ctx, L.x*view.scale + view.ox, L.y*view.scale + view.oy - 26, L.text, 15, L.col);
+  updateInfo(A, M, D ? dragMove : null);
+}
+
+function updateInfo(A, M, Dm) {
+  const lines = [];
+  if (M) {
+    let t = `<b>Range ${M.d}</b>`;
+    if (M.from || M.to) t += ` · ${esc(M.from || 'hex')} → ${esc(M.to || 'hex')}`;
+    lines.push(t);
+    const md = moveDetail(M.move);
+    if (M.showMove) {
+      let mv = `${moveText(M.move)}${md ? ` <span class="warn">(${md})</span>` : ''}`;
+      if (M.detour) mv += ` <span class="muted">by the dotted route; straight ${M.straight ? 'would cost ' + M.straight.cost : 'is blocked'}</span>`;
+      lines.push(mv);
+      moveWarnings(M.move).forEach(w => lines.push(`<span class="warn">${w}</span>`));
+    }
+    if (M.tcover) lines.push(`${esc(M.to)} has <b>${coverText(M.tcover)}</b> against ranged attacks <span class="muted">(melee and tech ignore cover)</span>`);
+    if (M.engaged.length) lines.push(`<span class="warn">${esc(M.from)} is engaged by ${names(M.engaged)}: +1 Difficulty on ranged attacks</span>`);
+    const c = [];
+    if (M.cover.hard) c.push(`${M.cover.hard} hard cover hex${M.cover.hard > 1 ? 'es' : ''}`);
+    if (M.cover.light) c.push(`${M.cover.light} light cover hex${M.cover.light > 1 ? 'es' : ''}`);
+    if (c.length) lines.push(`<span class="warn">On the path: ${c.join(', ')}</span>`);
+  }
+  if (A) {
+    const name = { line:'Line', cone:'Cone', blast:'Blast', burst:'Burst' }[A.kind];
+    let t = `<b>${name} ${A.X}</b> · ${A.cells.length} hex${A.cells.length === 1 ? '' : 'es'}`;
+    if (A.kind === 'blast' && A.range != null) t += ` · centre at range ${A.range}`;
+    lines.push(t);
+    lines.push(A.hits.length ? 'Hits: ' + A.hits.map(h => {
+      const c = A.covers.get(h.id); return esc(h.name) + (c.kind ? ` <span class="muted">(${c.kind} cover)</span>` : '');
+    }).join(', ') : '<span class="muted">No tokens caught</span>');
+    if (A.engaged.length) lines.push(`<span class="warn">${esc(A.attacker.name)} is engaged by ${names(A.engaged)}: +1 Difficulty on ranged attacks</span>`);
+  }
+  if (Dm) {
+    lines.push(`<b>${moveText(Dm)}</b>${moveDetail(Dm) ? ` <span class="warn">(${moveDetail(Dm)})</span>` : ''}`);
+    moveWarnings(Dm).forEach(w => lines.push(`<span class="warn">${w}</span>`));
+  }
+  const html = lines.join('<br>');
+  if (html !== lastInfo) { lastInfo = html; $('info').innerHTML = html; $('info').hidden = !html; }
+}
+
+function fitView() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  view.scale = Math.min((w - 40) / gridW(), (h - 40) / gridH());
+  view.ox = (w - gridW()*view.scale) / 2; view.oy = (h - gridH()*view.scale) / 2;
+  requestRender();
+}
+function centerOn(t) {
+  const m = centroid(tokenCells(t));
+  view.ox = cv.clientWidth/2 - m.x*view.scale; view.oy = cv.clientHeight/2 - m.y*view.scale; requestRender();
+}
+
+/* =========================================================================
+   BATTLE STATE  (every token change goes through commit())
+   ========================================================================= */
+const snap = () => JSON.stringify(B);
+function pushUndo() { undoStack.push(snap()); if (undoStack.length > 200) undoStack.shift(); redoStack = []; updateUndoBtns(); }
+function undo() { if (!undoStack.length) return; redoStack.push(snap()); B = JSON.parse(undoStack.pop()); commit(); updateUndoBtns(); }
+function redo() { if (!redoStack.length) return; undoStack.push(snap()); B = JSON.parse(redoStack.pop()); commit(); updateUndoBtns(); }
+function updateUndoBtns() { $('btnUndo').disabled = !undoStack.length; $('btnRedo').disabled = !redoStack.length; }
+function commit() { commitView(); scheduleSave(); }
+// The "Recent" list. GM-only entries (anything about hidden tokens) never show in the player view.
+function logEvent(text, gmOnly) { B.log = (B.log || []).concat({ at: Date.now(), text, gm: !!gmOnly }).slice(-40); }
+
+let saveTimer = null, dirty = false;
+function setSaveStatus(t, cls) { const el = $('stSave'); el.textContent = t; el.className = cls || ''; }
+function scheduleSave() { dirty = true; setSaveStatus('Unsaved changes…'); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 600); }
+const battleData = () => ({ format: 'lancer-battle', version: 1, map: S, tokens: B.tokens, nextId: B.nextId, log: B.log });
+async function saveNow() {
+  clearTimeout(saveTimer); if (!S) return;
+  try { await store.put('battle', battleData()); dirty = false; setSaveStatus('Autosaved ✓', 'ok'); }
+  catch (e) { console.error(e); setSaveStatus('Autosave failed – use "Save battle to file"', 'bad'); }
+}
+window.addEventListener('beforeunload', () => { if (S && dirty) saveNow(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && S && dirty) saveNow(); });
+
+function normalizeTokens(list) {
+  return (Array.isArray(list) ? list : []).filter(t => t && Number.isFinite(t.q) && Number.isFinite(t.r)).map((t, i) => ({
+    id: Number.isFinite(t.id) ? t.id : i + 1, name: String(t.name || 'Token').slice(0, 40),
+    side: SIDES[t.side] ? t.side : 'neutral', size: SIZES.includes(t.size) ? t.size : 1,
+    q: Math.round(t.q), r: Math.round(t.r), rot: ((Math.round(t.rot) || 0) % 6 + 6) % 6,
+    img: typeof t.img === 'string' ? t.img : null, hidden: !!t.hidden,
+    art: typeof t.art === 'string' && /^[Tt]okens\/[^/]+$/.test(t.art) ? t.art : null,
+  }));
+}
+const normalizeLog = list => (Array.isArray(list) ? list : []).filter(e => e && typeof e.text === 'string')
+  .map(e => ({ at: +e.at || Date.now(), text: e.text.slice(0, 120), gm: !!e.gm })).slice(-40);
+function setBattle(map, tokens, nextId, log) {
+  S = map; pathMemo = { key: null, val: null }; B = { tokens: normalizeTokens(tokens), nextId: 1, log: normalizeLog(log) };
+  B.nextId = Math.max(nextId || 1, ...B.tokens.map(t => t.id + 1));
+  undoStack = []; redoStack = []; updateUndoBtns();
+  ui.sel = null; ui.ruler = null; ui.area = null; ui.drag = null; ui.trail = null;
+  menuShown = false; $('menu').style.display = 'none'; $('battle').style.display = 'grid';
+  $('bName').textContent = S.name; $('showGrid').checked = S.showGrid; $('gridOp').value = S.gridOpacity;
+  bgImg = null;
+  if (S.bg) { const img = new Image(); img.onload = () => { bgImg = img; requestRender(); }; img.src = S.bg; }
+  setTool(ui.tool); commit();
+  requestAnimationFrame(fitView);
+  saveNow();
+}
+
+function freeSpotFor(t) {
+  const c = pxToAx((cv.clientWidth/2 - view.ox) / view.scale, (cv.clientHeight/2 - view.oy) / view.scale);
+  const taken = new Set(shown().flatMap(o => tokenCells(o).map(hkey)));
+  for (let rad = 0; rad < 60; rad++)
+    for (const h of brushCells(c, rad)) {
+      if (hd(h, c) !== rad) continue;
+      const cells = tokenCells({ ...t, q: h.q, r: h.r });
+      if (fits(cells) && !cells.some(x => taken.has(hkey(x)))) return h;
+    }
+  return null;
+}
+function addToken(side) {
+  if (!ui.gm && side !== 'ally') return;
+  const n = B.tokens.filter(t => t.side === side).length + 1;
+  const t = { id: B.nextId, name: `${SIDES[side].label} ${n}`, side, size: ui.newSize, q: 0, r: 0, rot: 0, img: null, hidden: ui.gm && ui.newHidden };
+  const h = freeSpotFor(t); if (!h) { toast('No free space for a token that size'); return; }
+  pushUndo(); t.q = h.q; t.r = h.r; B.nextId++; B.tokens.push(t); ui.sel = t.id;
+  logEvent(ui.gm ? `${t.name} placed${t.hidden ? ' (hidden)' : ''}` : `${t.name} deployed`, t.hidden); commit();
+}
+function selected() { return ui.sel != null ? tokenById(ui.sel) : null; }
+// change the selected token, if allowed, and only keep the change if it still fits on the map
+function editSelected(fn, allowed = canMove) {
+  const t = selected(); if (!t || !allowed(t)) return;
+  const before = JSON.stringify(t), probe = JSON.parse(before); fn(probe);
+  if (!fits(tokenCells(probe))) { toast("That doesn't fit here – move the token first"); return; }
+  pushUndo(); Object.assign(t, probe); commit();
+}
+function deleteSelected() {
+  const t = selected(); if (!t || !canRemove(t)) return;
+  pushUndo(); B.tokens = B.tokens.filter(x => x !== t); logEvent(`${t.name} removed`, t.hidden); commit();
+}
+function duplicateSelected() {
+  const t = selected(); if (!t || !canRemove(t)) return;
+  const base = t.name.replace(/\s*\d+$/, '') || 'Token';
+  const copy = { ...t, id: B.nextId, name: `${base} ${B.tokens.filter(x => x.name.startsWith(base)).length + 1}` };
+  const h = freeSpotFor(copy); if (!h) { toast('No free space for a copy'); return; }
+  pushUndo(); copy.q = h.q; copy.r = h.r; B.nextId++; B.tokens.push(copy); ui.sel = copy.id;
+  logEvent(`${copy.name} ${ui.gm ? 'placed' : 'deployed'}${copy.hidden ? ' (hidden)' : ''}`, copy.hidden); commit();
+}
+function setHidden(t, hidden) {
+  if (!ui.gm || !t || !!t.hidden === hidden) return;
+  pushUndo(); t.hidden = hidden; logEvent(`${t.name} ${hidden ? 'hidden from players' : 'revealed'}`, hidden); commit();
+}
+
+/* =========================================================================
+   SIDEBAR
+   ========================================================================= */
+let toastT = null;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1800); }
+function setTool(t) {
+  ui.tool = t;
+  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  const hint = TOOL_HINTS[t === 'move' && !ui.gm ? 'movePlayer' : t];
+  $('toolHint').textContent = hint; $('toolHint').hidden = !hint; updateCursor(); requestRender();
+}
+function setX(x) {
+  ui.X = Math.max(1, Math.min(15, x)); $('xVal').textContent = ui.X;
+  if (ui.area) ui.area.X = ui.X;
+  requestRender();
+}
+function updateCursor() {
+  cv.style.cursor = ui.panning ? 'grabbing' : ui.drag ? 'grabbing' : ui.space ? 'grab'
+    : ui.tool !== 'move' ? 'crosshair' : !ui.hover || !tokenAt(ui.hover) ? 'default' : canMove(tokenAt(ui.hover)) ? 'grab' : 'pointer';
+}
+function makeSeg(el, items, onPick) {
+  items.forEach(([val, label]) => {
+    const b = document.createElement('button'); b.className = 'btn small'; b.textContent = label; b.dataset.v = val;
+    b.onclick = () => onPick(val); el.appendChild(b);
+  });
+}
+const markSeg = (el, v) => el.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.v === String(v)));
+makeSeg($('newSizeSeg'), SIZES.map(s => [s, sizeLabel(s)]), s => { ui.newSize = +s; markSeg($('newSizeSeg'), s); });
+makeSeg($('tSizeSeg'), SIZES.map(s => [s, sizeLabel(s)]), s => editSelected(t => { t.size = +s; }, canRemove));
+makeSeg($('tSideSeg'), Object.entries(SIDES).map(([k, v]) => [k, v.label]), s => editSelected(t => { t.side = s; }, () => ui.gm));
+markSeg($('newSizeSeg'), ui.newSize);
+
+function updateSelBox() {
+  const t = selected(); $('selBox').hidden = !t; if (!t) return;
+  const edit = canMove(t), rem = canRemove(t), side = SIDES[t.side];
+  $('selHead').innerHTML = `<span class="dot" style="--c:${side.col}"></span><b>${esc(t.name)}</b>` +
+    `<span class="muted">${side.label} · Size ${sizeLabel(t.size)}${t.hidden ? ' · hidden from players' : ''}</span>`;
+  $('selReadonly').hidden = edit;
+  $('nameRow').hidden = $('imgRow').hidden = !edit;
+  $('tSizeSeg').hidden = $('btnDup').hidden = $('btnDel').hidden = !rem;
+  $('btnRotate').hidden = !edit || (t.size !== 2 && t.size !== 4) || !!t.art;   // art frames only fit one way up
+  $('actRow').hidden = $('btnRotate').hidden && !rem;
+  if (document.activeElement !== $('tName')) $('tName').value = t.name;
+  markSeg($('tSizeSeg'), t.size); markSeg($('tSideSeg'), t.side);
+  $('btnImgRemove').disabled = !t.img && !t.art;
+  $('tHidden').checked = !!t.hidden;
+}
+function updateRoster() {
+  const el = $('roster'), list = shown(); el.innerHTML = '';
+  $('rosterEmpty').hidden = list.length > 0;
+  for (const [side, sd] of Object.entries(SIDES)) {
+    const group = list.filter(t => t.side === side).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    if (!group.length) continue;
+    const h = document.createElement('div'); h.className = 'rostercat'; h.textContent = sd.group; el.appendChild(h);
+    group.forEach(t => {
+      const b = document.createElement('button'); b.className = 'btn' + (t.id === ui.sel ? ' active' : '') + (t.hidden ? ' hid' : '');
+      const dot = document.createElement('span'); dot.className = 'dot'; dot.style.setProperty('--c', sd.col);
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = t.name;
+      const sz = document.createElement('span'); sz.className = 'sz'; sz.textContent = (t.hidden ? 'hidden · ' : '') + 'Size ' + sizeLabel(t.size);
+      b.append(dot, nm, sz);
+      b.onclick = () => { ui.sel = t.id; centerOn(t); commitView(); };
+      el.appendChild(b);
+    });
+  }
+}
+function updateLog() {
+  const items = (B.log || []).filter(e => ui.gm || !e.gm).slice(-5).reverse(), el = $('log');
+  el.innerHTML = ''; $('feed').hidden = !items.length;
+  items.forEach(e => {
+    const li = document.createElement('li'); li.className = e.gm ? 'gm' : '';
+    const tm = document.createElement('span'); tm.className = 'tm';
+    tm.textContent = new Date(e.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    li.append(tm, e.text + (e.gm ? ' (only the GM sees this)' : ''));
+    el.appendChild(li);
+  });
+}
+function commitView() {   // refresh everything shown; selection changes need nothing saved
+  if (ui.sel != null && (!selected() || !seen(selected()))) ui.sel = null;
+  updateRoster(); updateSelBox(); updateLog(); requestRender();
+}
+
+document.querySelectorAll('.tool').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => addToken(b.dataset.add));
+$('xDown').onclick = () => setX(ui.X - 1);
+$('xUp').onclick = () => setX(ui.X + 1);
+$('tName').onfocus = () => pushUndo();
+$('tName').oninput = e => { const t = selected(); if (!t || !canMove(t)) return; t.name = e.target.value; updateRoster(); requestRender(); scheduleSave(); };
+$('tName').onchange = () => updateSelBox();
+$('tHidden').onchange = e => setHidden(selected(), e.target.checked);
+$('newHidden').onchange = e => { ui.newHidden = e.target.checked; };
+$('btnRotate').onclick = () => editSelected(t => { t.rot = (t.rot + 1) % 6; });
+$('btnDup').onclick = duplicateSelected;
+$('btnDel').onclick = deleteSelected;
+$('btnImg').onclick = () => $('fileImg').click();
+$('btnImgRemove').onclick = () => editSelected(t => { t.img = null; t.art = null; });
+$('btnArt').onclick = openArtDialog;
+$('fileImg').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const r = await readImageFile(f), img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = r.url; });
+    const c = document.createElement('canvas'), N = 256, k = Math.min(img.width, img.height);   // square centre crop
+    c.width = c.height = N;
+    c.getContext('2d').drawImage(img, (img.width - k)/2, (img.height - k)/2, k, k, 0, 0, N, N);
+    const url = c.toDataURL('image/png');
+    editSelected(t => { t.img = url; });
+  } catch (err) { alert(err.message || 'Could not read that image'); }
+};
+$('showNames').onchange = e => { ui.showNames = e.target.checked; requestRender(); };
+$('hardBlocks').onchange = e => { ui.hardBlocks = e.target.checked; requestRender(); };
+$('showGrid').onchange = e => { S.showGrid = e.target.checked; requestRender(); scheduleSave(); };
+$('gridOp').oninput = e => { S.gridOpacity = +e.target.value; requestRender(); scheduleSave(); };
+$('btnUndo').onclick = undo;
+$('btnRedo').onclick = redo;
+$('btnFit').onclick = fitView;
+$('btnClearMeasure').onclick = clearMeasure;
+$('btnSaveFile').onclick = saveToFile;
+$('btnMenu').onclick = async () => { await saveNow(); S = null; bgImg = null; showMenu(); };
+$('btnEditMap').onclick = editMap;
+function clearMeasure() { ui.ruler = null; ui.area = null; requestRender(); }
+
+/* =========================================================================
+   CANVAS INPUT
+   ========================================================================= */
+function worldAt(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left - view.ox) / view.scale, y: (e.clientY - r.top - view.oy) / view.scale }; }
+function hexAt(e) { const w = worldAt(e), h = pxToAx(w.x, w.y); return inB(h.q, h.r) ? h : null; }
+const startPan = e => { ui.panning = true; ui.last = { x: e.clientX, y: e.clientY }; updateCursor(); };
+
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+cv.addEventListener('pointerdown', e => {
+  if (!S) return;
+  cv.setPointerCapture(e.pointerId);
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+  if (e.button === 1 || (e.button === 0 && ui.space)) { startPan(e); return; }
+  const h = hexAt(e);
+  if (e.button === 2) { if (h) { ui.ruler = { from: originAt(h), to: originAt(h), startHex: h, toHex: h, active: true }; requestRender(); } return; }
+  if (e.button !== 0) return;
+  if (ui.tool === 'move') {
+    const t = h && tokenAt(h);
+    if (!t) { if (ui.sel != null) { ui.sel = null; commitView(); } startPan(e); return; }
+    if (!canMove(t)) {   // players can look at GM tokens but not move them
+      ui.sel = t.id; commitView(); toast(`${t.name} is run by the GM`); startPan(e); return;
+    }
+    // keep the token under the same part of the cursor while dragging
+    ui.sel = t.id; ui.drag = { id: t.id, dq: h.q - t.q, dr: h.r - t.r, from: { q: t.q, r: t.r }, moved: false };
+    B.tokens = B.tokens.filter(x => x !== t).concat(t);   // bring to front
+    commitView(); updateCursor(); return;
+  }
+  if (!h) return;
+  const origin = originAt(h);
+  if (ui.tool === 'burst' && origin.token == null) { toast('Click a token to centre the burst on it'); }
+  ui.area = { kind: ui.tool, X: ui.X, origin: ui.tool === 'blast' && origin.token == null ? null : origin, P: worldAt(e), active: true };
+  requestRender();
+});
+cv.addEventListener('pointermove', e => {
+  if (!S) return;
+  if (ui.panning) { view.ox += e.clientX - ui.last.x; view.oy += e.clientY - ui.last.y; ui.last = { x: e.clientX, y: e.clientY }; requestRender(); return; }
+  const h = hexAt(e), prev = ui.hover; ui.hover = h;
+  if (h) {
+    const o = axToOff(h.q, h.r), k = keyOf(h.q, h.r), bits = [`Hex ${o.c + 1}, ${o.r + 1}`];
+    if (S.cells[k]) bits.push(COVER[S.cells[k]].label);
+    if (S.zones[k]) bits.push(ZONES[S.zones[k]].label);
+    if (S.effects[k]) bits.push(EFFECTS[S.effects[k]].label);
+    $('stHex').textContent = bits.join(' · ');
+  } else $('stHex').textContent = 'Hex —';
+
+  if (ui.drag && h) {
+    const t = tokenById(ui.drag.id), q = h.q - ui.drag.dq, r = h.r - ui.drag.dr;
+    if (t && (q !== t.q || r !== t.r) && fits(tokenCells({ ...t, q, r }))) {
+      if (!ui.drag.moved) { pushUndo(); ui.drag.moved = true; }
+      t.q = q; t.r = r; requestRender();
+    }
+  }
+  if (ui.ruler && ui.ruler.active && h) { ui.ruler.to = originAt(h); ui.ruler.toHex = h; }
+  if (ui.area && ui.area.active) ui.area.P = worldAt(e);
+  if (ui.ruler && ui.ruler.active || ui.area && ui.area.active || !prev || !h || prev.q !== h.q || prev.r !== h.r) { requestRender(); updateCursor(); }
+});
+function endPointer() {
+  if (ui.drag) {
+    const D = ui.drag, t = tokenById(D.id); ui.drag = null;
+    if (D.moved && t) {
+      const m = movePath(t, D.from, t), n = m ? m.hexes : hd(D.from, t);
+      logEvent(`${t.name} moved ${n} hex${n === 1 ? '' : 'es'}` + (m && m.extra ? ` (Move ${m.cost})` : '')
+        + (m && m.engagedBy ? `, engaged by ${m.engagedBy.name}` : ''), t.hidden || (m && m.engagedBy && m.engagedBy.hidden));
+      if (m) ui.trail = { id: t.id, m, at: performance.now() };
+      commit();
+    }
+  }
+  if (ui.ruler) {
+    ui.ruler.active = false;
+    // a right-click without dragging just clears the ruler
+    const R = ui.ruler; if (R.to && JSON.stringify(R.from) === JSON.stringify(R.to)) ui.ruler = null;
+  }
+  if (ui.area) ui.area.active = false;   // the template stays on the map until Esc or the next one
+  ui.panning = false; updateCursor(); requestRender();
+}
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', endPointer);
+cv.addEventListener('pointerleave', () => { if (!ui.drag && !ui.panning) { ui.hover = null; requestRender(); } });
+cv.addEventListener('wheel', e => {
+  if (!S) return; e.preventDefault();
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const ns = Math.min(8, Math.max(0.05, view.scale * Math.exp(-e.deltaY * 0.0015)));
+  view.ox = mx - (mx - view.ox) * ns / view.scale; view.oy = my - (my - view.oy) * ns / view.scale; view.scale = ns;
+  requestRender();
+}, { passive: false });
+window.addEventListener('resize', requestRender);
+
+const typing = e => ['INPUT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'checkbox' && e.target.type !== 'range';
+window.addEventListener('keydown', e => {
+  if (!$('gmDialog').hidden) { if (e.key === 'Escape') closeGmDialog(); return; }
+  if (!$('artDialog').hidden) { if (e.key === 'Escape') $('artDialog').hidden = true; return; }
+  if (!S || $('battle').style.display !== 'grid') return;
+  if (typing(e)) { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); return; }
+  const k = e.key.toLowerCase();
+  if (e.ctrlKey || e.metaKey) {
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+    else if (k === 's') { e.preventDefault(); if (ui.gm) saveToFile(); }
+    else if (k === 'd') { e.preventDefault(); duplicateSelected(); }
+    return;
+  }
+  if (k === ' ') { e.preventDefault(); if (!ui.space) { ui.space = true; updateCursor(); } return; }
+  const tools = { 1:'move', 2:'line', 3:'cone', 4:'blast', 5:'burst' };
+  if (tools[k]) setTool(tools[k]);
+  else if (k === '[' || k === '-') setX(ui.X - 1);
+  else if (k === ']' || k === '=' || k === '+') setX(ui.X + 1);
+  else if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSelected(); }
+  else if (k === 'r') { const t = selected(); if (t && !t.art && (t.size === 2 || t.size === 4)) editSelected(x => { x.rot = (x.rot + (e.shiftKey ? 5 : 1)) % 6; }); }
+  else if (k === 'f') fitView();
+  else if (k === 'h') { const t = selected(); if (t) setHidden(t, !t.hidden); }
+  else if (k === 'escape') { if (ui.ruler || ui.area) clearMeasure(); else if (ui.sel != null) { ui.sel = null; commitView(); } }
+});
+window.addEventListener('keyup', e => { if (e.key === ' ') { if (!typing(e)) e.preventDefault(); ui.space = false; updateCursor(); } });
+
+/* =========================================================================
+   FILES, MENU & THE MAP MAKER ROUND TRIP
+   ========================================================================= */
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+const safeName = () => (S.name || 'battle').replace(/[^\w\- ]+/g, '').trim() || 'battle';
+function saveToFile() { download(new Blob([JSON.stringify(battleData())], { type: 'application/json' }), safeName() + '.battle.json'); toast('Battle saved to file'); }
+
+let savedBattle = null, makerMap = null, menuShown = false;
+async function openFile(f) {
+  try {
+    const d = JSON.parse(await f.text());
+    const isBattle = d && d.format === 'lancer-battle';
+    const map = normalizeMap(isBattle ? d.map : d);
+    if (savedBattle && savedBattle.tokens && savedBattle.tokens.length &&
+        !confirm(`This replaces your current battle on "${savedBattle.map.name}" (${savedBattle.tokens.length} tokens). Continue?`)) return;
+    setBattle(map, isBattle ? d.tokens : [], isBattle ? d.nextId : 1, isBattle ? d.log : []);
+  } catch (err) { alert('Could not open that file: ' + err.message); }
+}
+function showMenu() {
+  menuShown = true; $('battle').style.display = 'none'; $('menu').style.display = 'flex';
+  Promise.all([store.get('battle'), store.get('autosave')]).then(([b, m]) => {
+    savedBattle = b && b.map ? b : null; makerMap = m;
+    $('continueBox').hidden = !savedBattle;
+    if (savedBattle) $('continueInfo').textContent = `"${savedBattle.map.name}" · ${(savedBattle.tokens || []).length} tokens`;
+    $('makerBox').hidden = !m;
+    if (m) $('makerInfo').textContent = `"${m.name}" · ${m.cols}×${m.rows} hexes`;
+  }).catch(e => console.warn(e));
+}
+$('btnContinue').onclick = () => { if (savedBattle) setBattle(normalizeMap(savedBattle.map), savedBattle.tokens, savedBattle.nextId, savedBattle.log); };
+$('btnUseMaker').onclick = () => {
+  if (!makerMap) return;
+  if (savedBattle && savedBattle.tokens && savedBattle.tokens.length &&
+      !confirm(`Start a new battle? Your current battle on "${savedBattle.map.name}" (${savedBattle.tokens.length} tokens) will be replaced.\n\nTip: "Save battle to file" keeps a copy.`)) return;
+  setBattle(normalizeMap(makerMap), [], 1);
+};
+$('btnLoadFile').onclick = () => $('fileMap').click();
+$('fileMap').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) openFile(f); };
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault(); const f = e.dataTransfer.files[0];
+  if (ui.gm && f && /\.json$/i.test(f.name)) openFile(f);
+});
+
+// Hand the map to the Map Maker; it comes back with "Back to battle" and the tokens are kept
+const mapContent = m => m && JSON.stringify([m.cols, m.rows, m.cells, m.zones, m.objects, m.bg]);
+async function editMap() {
+  if (!ui.gm) return;
+  const current = await store.get('autosave').catch(() => null);
+  if (current && mapContent(current) !== mapContent(S) &&
+      !confirm(`The Map Maker has another map open ("${current.name}"). Editing this battle's map replaces it there.\n\nTip: in the Map Maker, "Save to file" keeps a copy.\n\nContinue?`)) return;
+  try { await saveNow(); await store.put('autosave', JSON.parse(JSON.stringify(S))); }
+  catch (e) { alert('Could not hand the map to the Map Maker: ' + e.message); return; }
+  sessionStorage.setItem('gmReturn', '1');   // stay in GM mode when coming back
+  location.href = 'Map_maker.html?from=battle';
+}
+async function returnFromEditor() {
+  const [b, m] = await Promise.all([store.get('battle'), store.get('autosave')]);
+  if (!b || !m) { showMenu(); return; }
+  const map = normalizeMap(m), tokens = normalizeTokens(b.tokens);
+  if (sessionStorage.getItem('gmReturn')) { sessionStorage.removeItem('gmReturn'); setMode(true); }
+  setBattle(map, tokens, b.nextId, b.log);
+  logEvent('The GM updated the map');
+  // the map may have shrunk: pull stranded tokens back to the nearest spot that fits
+  let moved = 0;
+  for (const t of B.tokens) {
+    if (fits(tokenCells(t))) continue;
+    for (let rad = 1, done = false; rad < 200 && !done; rad++)
+      for (const h of brushCells(t, rad))
+        if (hd(h, t) === rad && fits(tokenCells({ ...t, q: h.q, r: h.r }))) { t.q = h.q; t.r = h.r; moved++; done = true; break; }
+  }
+  commit();
+  toast(moved ? `Map updated – ${moved} token(s) moved back onto the map` : 'Map updated');
+}
+
+/* =========================================================================
+   BOOT
+   ========================================================================= */
+/* =========================================================================
+   TOKEN ART  (a local, git-ignored folder the server lists; tokens only store the path)
+   ========================================================================= */
+let artList = null;
+async function loadArtList() {
+  if (artList) return artList;
+  try {
+    const r = await fetch('api/tokens'); if (!r.ok) throw new Error(r.status);
+    const d = await r.json();
+    artList = (d.files || []).map(f => ({ name: f.replace(/\.[^.]+$/, ''), url: d.folder + '/' + encodeURIComponent(f) }));
+  } catch (e) { artList = null; }
+  return artList;
+}
+// Work out which Size an art frame is drawn for, by checking where the red frame line actually is
+const artSizes = new Map();
+function detectArtSize(url) {
+  if (artSizes.has(url)) return artSizes.get(url);
+  const p = new Promise(res => {
+    const img = new Image();
+    img.onerror = () => res(null);
+    img.onload = () => {
+      const N = 200, c = document.createElement('canvas'); c.width = c.height = N;
+      const x = c.getContext('2d'), W = img.naturalWidth, H = img.naturalHeight;
+      x.drawImage(img, 0, H - W, W, W, 0, 0, N, N);
+      const px = x.getImageData(0, 0, N, N).data;
+      const isRed = (u, v) => {
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+          const X = Math.round(u) + dx, Y = Math.round(v) + dy;
+          if (X < 0 || Y < 0 || X >= N || Y >= N) continue;
+          const i = (Y*N + X)*4;
+          if (px[i+3] > 128 && px[i] > 140 && px[i+1] < 90 && px[i+2] < 90) return true;
+        }
+        return false;
+      };
+      let best = { size: null, score: 0, runs: 0 };
+      for (const size of [1, 2, 3, 4]) {
+        const cells = TOKEN_FP[size].map(([q, r]) => cellAt(q, r)), b = artBox(cells), k = N / Math.max(b.w, b.h);
+        let hit = 0, n = 0, runs = 0, prev = null;
+        for (const [p0, p1] of outerEdges(cells, HEX)) for (let i = 0; i < 16; i++) {
+          const t = (i + 0.5) / 16, on = isRed(N/2 + (p0[0] + (p1[0] - p0[0])*t - b.cx)*k, N/2 + (p0[1] + (p1[1] - p0[1])*t - b.cy)*k);
+          n++; if (on) hit++; if (prev !== null && on !== prev) runs++; prev = on;
+        }
+        if (hit / n > best.score) best = { size, score: hit / n, runs };
+      }
+      // a dashed single-hex frame means Size ½
+      res(best.score < 0.35 ? null : best.size === 1 && best.runs >= 14 ? 0.5 : best.size);
+    };
+    img.src = url;
+  });
+  artSizes.set(url, p);
+  return p;
+}
+async function openArtDialog() {
+  const t = selected(); if (!t || !canMove(t)) return;
+  $('artDialog').hidden = false; $('artSearch').value = ''; $('artGrid').innerHTML = '';
+  const list = await loadArtList();
+  $('artNote').textContent = list === null ? "The art list comes from Battlemap.py's server; start the battlemap with it to use your token art."
+    : !list.length ? 'No pictures found. Put PNG, JPG or WebP files in the Tokens folder next to Battlemap.html.' : '';
+  renderArtGrid();
+  $('artSearch').focus();
+}
+function renderArtGrid() {
+  const t = selected(), q = $('artSearch').value.trim().toLowerCase(), grid = $('artGrid');
+  grid.innerHTML = '';
+  for (const a of artList || []) {
+    if (q && !q.split(/\s+/).every(w => a.name.toLowerCase().includes(w))) continue;
+    const b = document.createElement('button'); b.className = 'btn' + (t && t.art === a.url ? ' active' : '');
+    const im = document.createElement('img'); im.loading = 'lazy'; im.src = a.url; im.alt = '';
+    b.append(im, a.name); b.onclick = () => pickArt(a); grid.appendChild(b);
+  }
+}
+async function pickArt(a) {
+  const size = await detectArtSize(a.url);
+  const generic = /^(blank|generic) size/i.test(a.name);
+  editSelected(x => {
+    x.art = a.url; x.rot = 0;
+    if (size) x.size = size;
+    if (!generic && /^(Player|Ally|Hostile|Neutral) \d+$/.test(x.name)) x.name = a.name;   // swap default names for the frame's
+  });
+  $('artDialog').hidden = true;
+}
+$('artSearch').oninput = renderArtGrid;
+$('artClose').onclick = () => { $('artDialog').hidden = true; };
+
+/* =========================================================================
+   PLAYER VIEW / GM MODE
+   ========================================================================= */
+function setMode(gm) {
+  ui.gm = gm; document.body.classList.toggle('gm', gm);
+  $('modeBadge').textContent = gm ? 'GM MODE' : 'PLAYER VIEW';
+  $('btnGm').textContent = gm ? '🔓 Lock to player view' : '🔒 GM';
+  // each side only undoes its own changes, and no measurement from a hidden token survives locking
+  undoStack = []; redoStack = []; updateUndoBtns();
+  if (!gm) { clearMeasure(); ui.trail = null; }
+  setTool(ui.tool);
+  if (S) commitView(); else if (menuShown) showMenu();
+}
+async function checkPasscode(code) {
+  try {
+    const r = await fetch('api/gm-unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: code }) });
+    return r.ok ? true : r.status === 403 ? 'Wrong passcode' : `The server couldn't check the passcode (error ${r.status}). Restart Battlemap.py.`;
+  } catch (e) { return "Can't reach the server. Is Battlemap.py still running?"; }
+}
+function openGmDialog() {
+  if (ui.gm) { setMode(false); toast('Locked – player view'); return; }
+  if (location.protocol === 'file:') { setMode(true); toast('Opened without Battlemap.py, so there is no passcode check'); return; }
+  $('gmErr').textContent = ''; $('gmCode').value = ''; $('gmDialog').hidden = false; $('gmCode').focus();
+}
+function closeGmDialog() { $('gmDialog').hidden = true; }
+$('btnGm').onclick = openGmDialog;
+$('btnMenuGm').onclick = openGmDialog;
+$('gmCancel').onclick = closeGmDialog;
+$('gmForm').onsubmit = async e => {
+  e.preventDefault();
+  const res = await checkPasscode($('gmCode').value);
+  if (res === true) { closeGmDialog(); setMode(true); toast('GM mode – lock the screen before handing it back'); }
+  else { $('gmErr').textContent = res; $('gmCode').select(); }
+};
+
+/* =========================================================================
+   BOOT  (always starts in the player view, on the last battle if there is one)
+   ========================================================================= */
+setX(ui.X); setMode(false);
+const fromEditor = new URLSearchParams(location.search).get('from') === 'editor';
+history.replaceState(null, '', location.pathname);   // so a reload doesn't repeat the hand-over
+store.init().then(async () => {
+  if (fromEditor) { await returnFromEditor(); return; }
+  const b = await store.get('battle').catch(() => null);
+  if (b && b.map) setBattle(normalizeMap(b.map), b.tokens, b.nextId, b.log);
+  else showMenu();
+});
+</script>
+</body>
+</html>
