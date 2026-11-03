@@ -74,6 +74,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
 .tool.active,.tpl.active,.seg button.active{border-color:var(--accent2);background:#18293a;box-shadow:inset 0 0 0 1px var(--accent2)}
 .sw{width:16px;height:16px;border-radius:3px;border:1px solid rgba(255,255,255,.25);flex:none;
   clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
+.sw.zone{background:repeating-linear-gradient(45deg,rgba(var(--zc),.9) 0 3px,rgba(var(--zc),.3) 3px 6px)}
 .sw.erase{background:repeating-linear-gradient(45deg,#ff6b3d 0 3px,transparent 3px 6px)}
 .seg{display:flex;gap:4px;margin-top:8px;align-items:center}
 .seg span{font-size:12px;color:var(--muted);margin-right:4px}
@@ -168,6 +169,11 @@ input[type=checkbox]{accent-color:var(--accent2)}
         <button class="btn tool" data-tool="erase"><span class="sw erase"></span>Eraser<kbd>3</kbd></button>
         <button class="btn tool" data-tool="pan"><span style="width:16px;text-align:center">✋</span>Pan view<kbd>4</kbd></button>
       </div>
+      <div class="tplcat">Zones</div>
+      <div class="tools">
+        <button class="btn tool" data-tool="deploy"><span class="sw zone" style="--zc:61,139,255"></span>Deployment zone<kbd>5</kbd></button>
+        <button class="btn tool" data-tool="extract"><span class="sw zone" style="--zc:255,194,61"></span>Extraction zone<kbd>6</kbd></button>
+      </div>
       <div class="seg" id="brushSeg">
         <span>Brush</span>
         <button class="btn small" data-b="0">1 hex</button>
@@ -218,7 +224,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
     <span id="stHex">Hex —</span>
     <span id="stCounts"></span>
     <span class="grow"></span>
-    <span>Right-click: remove · Wheel: zoom · Space/middle-drag: pan · R: rotate · Esc: deselect</span>
+    <span>5/6: zones · Right-click: remove · Wheel: zoom · Space/middle-drag: pan · R: rotate · Esc: deselect</span>
     <span id="stSave"></span>
   </footer>
 </div>
@@ -236,6 +242,11 @@ const DIRS = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]];       // DIRS[i] is the 
 const COVER = {
   light: { fill:'rgba(70,185,85,0.55)', ring:'rgba(160,255,170,0.35)', label:'Light cover' },
   hard:  { fill:'rgba(62,66,74,0.92)',  ring:'rgba(185,195,210,0.40)', label:'Hard cover'  },
+};
+// Zones sit on their own layer, so a hex can be both cover and part of a zone
+const ZONES = {
+  deploy:  { col:'61,139,255', label:'Deployment zone', up:false, dash:null },
+  extract: { col:'255,194,61', label:'Extraction zone', up:true,  dash:[0.22, 0.14] },
 };
 
 let S = null;            // the current map (everything here gets saved)
@@ -346,21 +357,42 @@ const PAL = {
   hab:    { roof:'#aab5c1', trim:'#7b8794', accent:'#4fd1ff' },
   ware:   { roof:'#857558', trim:'#5c513e', accent:'#ffb347' },
   hq:     { roof:'#4b5563', trim:'#323a45', accent:'#ff6b3d' },
+  barracks:{ roof:'#6f7a5a', trim:'#4c543d', accent:'#9be564' },
+  reactor:{ roof:'#5d6670', trim:'#3c434c', accent:'#7dffb0' },
+  factory:{ roof:'#7a5a46', trim:'#523b2e', accent:'#ffb347' },
+  hangar: { roof:'#6f7a87', trim:'#4a535e', accent:'#4fd1ff' },
+  arco:   { roof:'#4a5260', trim:'#2f3540', accent:'#c58bff' },
+  arcoTop:{ roof:'#6a7484', trim:'#454d5a', accent:'#4fd1ff' },
 };
 function buildingBase(ctx, cells, s, pal) {
   ctx.save(); ctx.translate(s*0.12, s*0.16); footprintPath(ctx, cells, s);
   ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill(); ctx.restore();
   footprintPath(ctx, cells, s); ctx.fillStyle = pal.roof; ctx.fill();
-  const b = bbox(cells, s), e = outerEdges(cells, s);
+  const b = bbox(cells, s);
   ctx.save(); footprintPath(ctx, cells, s); ctx.clip();
   const g = ctx.createLinearGradient(b.x0, b.y0, b.x1, b.y1);
   g.addColorStop(0, 'rgba(255,255,255,0.14)'); g.addColorStop(1, 'rgba(0,0,0,0.24)');
   ctx.fillStyle = g; ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+  ctx.restore();
+  buildingTrim(ctx, cells, s, pal);
+}
+function buildingTrim(ctx, cells, s, pal) {
+  const e = outerEdges(cells, s);
+  ctx.save(); footprintPath(ctx, cells, s); ctx.clip();
   strokeEdges(ctx, e, s*0.40, 'rgba(0,0,0,0.45)');
   strokeEdges(ctx, e, s*0.35, pal.trim);
   strokeEdges(ctx, e, s*0.13, pal.accent);
   ctx.restore();
   strokeEdges(ctx, e, s*0.05, '#0a0c10');
+}
+/* Roof detail for big buildings: drawn in a frame centred on the building and turned with it,
+   clipped to the whole footprint, then the edge trim is redrawn over it */
+function roofDetail(ctx, cells, s, pal, rot, fn) {
+  const m = centroid(cells);
+  ctx.save(); footprintPath(ctx, cells, s); ctx.clip();
+  ctx.translate(m.x, m.y); ctx.rotate(rot * Math.PI/3); fn();
+  ctx.restore();
+  buildingTrim(ctx, cells, s, pal);
 }
 
 /* Concrete jersey-barrier style bar with hazard-striped ends */
@@ -585,6 +617,192 @@ function drawHQ(ctx, cells, s, o) {
   for (let i = 0; i < 8; i++) { const a = i/8*TAU; light(ctx, c.x + Math.cos(a)*s*0.77, c.y + Math.sin(a)*s*0.77, s*0.035, '#4fd1ff'); }
 }
 
+/* ---------- Large buildings ---------- */
+function centroid(cells) { return { x: cells.reduce((t, c) => t + c.x, 0) / cells.length, y: cells.reduce((t, c) => t + c.y, 0) / cells.length }; }
+function solar(ctx, x, y, s, ang) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  const w = s*0.62, h = s*0.4;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-w/2 + s*0.05, -h/2 + s*0.06, w, h);
+  const g = ctx.createLinearGradient(-w/2, -h/2, w/2, h/2); g.addColorStop(0, '#2c5a8c'); g.addColorStop(1, '#14284a');
+  ctx.fillStyle = g; ctx.fillRect(-w/2, -h/2, w, h);
+  ctx.strokeStyle = 'rgba(140,195,255,0.45)'; ctx.lineWidth = s*0.015; ctx.beginPath();
+  for (let i = 1; i < 4; i++) { const xx = -w/2 + w*i/4; ctx.moveTo(xx, -h/2); ctx.lineTo(xx, h/2); }
+  ctx.moveTo(-w/2, 0); ctx.lineTo(w/2, 0); ctx.stroke();
+  ctx.strokeStyle = '#9aa3ad'; ctx.lineWidth = s*0.03; ctx.strokeRect(-w/2, -h/2, w, h);
+  ctx.restore();
+}
+function tank(ctx, x, y, r, s) {
+  circle(ctx, x + s*0.07, y + s*0.1, r); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+  const g = ctx.createRadialGradient(x - r*0.35, y - r*0.35, r*0.1, x, y, r);
+  g.addColorStop(0, '#eef1f4'); g.addColorStop(0.6, '#a9b2bc'); g.addColorStop(1, '#5f6873');
+  circle(ctx, x, y, r); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = '#1f242a'; ctx.lineWidth = s*0.035; ctx.stroke();
+  circle(ctx, x, y, r*0.3); ctx.fillStyle = '#3a414a'; ctx.fill();
+}
+function smokestack(ctx, x, y, r, s, seed) {
+  const rnd = rng(seed);
+  ctx.save(); ctx.globalAlpha *= 0.28;
+  for (let i = 0; i < 4; i++) { circle(ctx, x + s*(0.25 + i*0.22) + rnd()*s*0.1, y - s*(0.15 + i*0.18), r*(1 + i*0.35)); ctx.fillStyle = '#c9ccd1'; ctx.fill(); }
+  ctx.restore();
+  circle(ctx, x + s*0.18, y + s*0.24, r); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+  const g = ctx.createRadialGradient(x - r*0.4, y - r*0.4, r*0.1, x, y, r);
+  g.addColorStop(0, '#a9aeb5'); g.addColorStop(1, '#4b5058');
+  circle(ctx, x, y, r); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = '#1c2026'; ctx.lineWidth = s*0.035; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, r*0.85, 0, TAU); ctx.strokeStyle = '#d8443a'; ctx.lineWidth = r*0.18; ctx.stroke();
+  circle(ctx, x, y, r*0.55); ctx.fillStyle = '#0b0d10'; ctx.fill();
+}
+
+function drawBarracks(ctx, cells, s, o) {
+  buildingBase(ctx, cells, s, PAL.barracks);
+  const m = centroid(cells), ang = o.rot * Math.PI/3;
+  roofDetail(ctx, cells, s, PAL.barracks, o.rot, () => {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(-4*s, -s*0.05, 8*s, s*0.1);
+    ctx.fillStyle = 'rgba(255,255,255,0.13)'; ctx.fillRect(-4*s, -s*0.13, 8*s, s*0.08);
+  });
+  cells.forEach((c, i) => {
+    const kind = i % 3;
+    if (kind === 0) solar(ctx, c.x, c.y, s, ang); else if (kind === 1) vent(ctx, c.x, c.y, s*0.24, ang); else acUnit(ctx, c.x, c.y, s, ang);
+  });
+  light(ctx, m.x, m.y, s*0.05, PAL.barracks.accent);
+}
+function drawReactor(ctx, cells, s, o) {
+  buildingBase(ctx, cells, s, PAL.reactor);
+  const c = cells[0], ang = o.rot * Math.PI/3;
+  ctx.lineCap = 'round';
+  for (let i = 1; i < cells.length; i++) {
+    const k = cells[i];
+    ctx.beginPath(); ctx.moveTo(c.x, c.y); ctx.lineTo(k.x, k.y);
+    ctx.strokeStyle = '#2d333b'; ctx.lineWidth = s*0.2; ctx.stroke();
+    ctx.strokeStyle = '#8b95a1'; ctx.lineWidth = s*0.12; ctx.stroke();
+    if (i % 2) tank(ctx, k.x, k.y, s*0.36, s); else vent(ctx, k.x, k.y, s*0.27, Math.atan2(k.y - c.y, k.x - c.x));
+  }
+  // cooling tower
+  circle(ctx, c.x + s*0.2, c.y + s*0.28, s*1.02); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+  const g = ctx.createRadialGradient(c.x - s*0.4, c.y - s*0.4, s*0.1, c.x, c.y, s*1.02);
+  g.addColorStop(0, '#dde2e7'); g.addColorStop(0.7, '#9aa3ad'); g.addColorStop(1, '#5f6873');
+  circle(ctx, c.x, c.y, s*1.02); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = '#1f242a'; ctx.lineWidth = s*0.05; ctx.stroke();
+  circle(ctx, c.x, c.y, s*0.72); ctx.fillStyle = '#14181d'; ctx.fill();
+  const glow = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, s*0.7);
+  glow.addColorStop(0, 'rgba(160,255,200,0.95)'); glow.addColorStop(0.45, 'rgba(60,220,140,0.45)'); glow.addColorStop(1, 'rgba(60,220,140,0)');
+  circle(ctx, c.x, c.y, s*0.7); ctx.fillStyle = glow; ctx.fill();
+  ctx.setLineDash([s*0.12, s*0.12]); circle(ctx, c.x, c.y, s*0.87);
+  ctx.strokeStyle = '#f2c230'; ctx.lineWidth = s*0.07; ctx.stroke(); ctx.setLineDash([]);
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
+  ctx.fillStyle = '#3a414a'; ctx.fillRect(-s*0.95, -s*0.07, s*1.9, s*0.14);
+  ctx.strokeStyle = '#1c2026'; ctx.lineWidth = s*0.03; ctx.strokeRect(-s*0.95, -s*0.07, s*1.9, s*0.14);
+  ctx.restore();
+}
+function drawLandingPad(ctx, cells, s, o) {
+  const c = cells[0], ang = o.rot * Math.PI/3, e = outerEdges(cells, s);
+  footprintPath(ctx, cells, s); ctx.fillStyle = '#2a2f36'; ctx.fill();
+  ctx.save(); footprintPath(ctx, cells, s); ctx.clip();
+  ctx.translate(c.x, c.y); ctx.rotate(ang);
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = s*0.03; ctx.beginPath();
+  for (let x = -3*s; x <= 3*s; x += s*0.5) { ctx.moveTo(x, -3*s); ctx.lineTo(x, 3*s); ctx.moveTo(-3*s, x); ctx.lineTo(3*s, x); }
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  for (const [x, y, r] of [[-0.9, 0.5, 0.35], [0.7, -0.8, 0.25], [1.1, 0.9, 0.3]]) { circle(ctx, x*s, y*s, r*s); ctx.fill(); }
+  ctx.restore();
+  strokeEdges(ctx, e, s*0.16, '#f2c230');
+  ctx.setLineDash([s*0.18, s*0.18]); strokeEdges(ctx, e, s*0.16, '#1a1a1a'); ctx.setLineDash([]);
+  strokeEdges(ctx, e, s*0.04, '#0a0c10');
+  circle(ctx, c.x, c.y, s*1.25); ctx.strokeStyle = '#d8dde3'; ctx.lineWidth = s*0.1; ctx.stroke();
+  ctx.setLineDash([s*0.25, s*0.15]); circle(ctx, c.x, c.y, s*1.02); ctx.lineWidth = s*0.04; ctx.stroke(); ctx.setLineDash([]);
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
+  ctx.strokeStyle = '#d8dde3'; ctx.lineWidth = s*0.14; ctx.lineCap = 'butt'; ctx.beginPath();
+  ctx.moveTo(-s*0.3, -s*0.45); ctx.lineTo(-s*0.3, s*0.45); ctx.moveTo(s*0.3, -s*0.45); ctx.lineTo(s*0.3, s*0.45);
+  ctx.moveTo(-s*0.3, 0); ctx.lineTo(s*0.3, 0); ctx.stroke();
+  ctx.fillStyle = '#f2c230'; ctx.beginPath(); ctx.moveTo(s*1.55, 0); ctx.lineTo(s*1.35, -s*0.16); ctx.lineTo(s*1.35, s*0.16); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  for (let i = 1; i < cells.length; i++) {
+    const k = cells[i];
+    light(ctx, c.x + (k.x - c.x)*1.45, c.y + (k.y - c.y)*1.45, s*0.05, i % 2 ? '#4fd1ff' : '#ff6b3d');
+  }
+}
+function drawFactory(ctx, cells, s, o) {
+  buildingBase(ctx, cells, s, PAL.factory);
+  const m = centroid(cells), ang = o.rot * Math.PI/3;
+  roofDetail(ctx, cells, s, PAL.factory, o.rot, () => {
+    for (let x = -5*s; x < 5*s; x += s*0.5) {      // sawtooth roof with skylights
+      ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fillRect(x, -5*s, s*0.25, 10*s);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(x + s*0.25, -5*s, s*0.05, 10*s);
+      ctx.fillStyle = 'rgba(120,215,255,0.28)'; ctx.fillRect(x + s*0.3, -5*s, s*0.1, 10*s);
+    }
+  });
+  [5, 6].forEach(i => acUnit(ctx, cells[i].x, cells[i].y, s, ang));
+  [9, 10].forEach(i => vent(ctx, cells[i].x, cells[i].y, s*0.27, ang));
+  [1, 2].forEach(i => smokestack(ctx, cells[i].x, cells[i].y, s*0.36, s, o.id*3 + i));
+  [0, 3, 8, 11].forEach(i => light(ctx, cells[i].x, cells[i].y, s*0.05, PAL.factory.accent));
+}
+function drawHangar(ctx, cells, s, o) {
+  buildingBase(ctx, cells, s, PAL.hangar);
+  const m = centroid(cells), ang = o.rot * Math.PI/3;
+  roofDetail(ctx, cells, s, PAL.hangar, o.rot, () => {
+  const g = ctx.createLinearGradient(0, -2.2*s, 0, 2.2*s);           // barrel roof shading
+  g.addColorStop(0, 'rgba(0,0,0,0.38)'); g.addColorStop(0.4, 'rgba(255,255,255,0.1)'); g.addColorStop(1, 'rgba(0,0,0,0.42)');
+  ctx.fillStyle = g; ctx.fillRect(-5*s, -2.5*s, 10*s, 5*s);
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = s*0.04; ctx.beginPath();
+  for (let x = -5*s; x <= 5*s; x += s*0.42) { ctx.moveTo(x, -2.5*s); ctx.lineTo(x, 2.5*s); }
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fillRect(-5*s, -s*0.38, 10*s, s*0.06);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.font = `bold ${s*0.9}px Consolas, monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('H-' + String(o.id % 100).padStart(2, '0'), 0, s*0.6);
+  });
+  // big door on the +x end
+  ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(ang);
+  const dx = SQRT3*s*2 + s*0.55, dw = s*0.28, dh = s*1.5;
+  ctx.fillStyle = '#1c2026'; ctx.fillRect(dx - dw, -dh/2, dw, dh);
+  ctx.save(); ctx.beginPath(); ctx.rect(dx - dw, -dh/2, dw, dh); ctx.clip();
+  ctx.strokeStyle = '#f2c230'; ctx.lineWidth = s*0.07;
+  for (let t = -dh; t < dh; t += s*0.2) { ctx.beginPath(); ctx.moveTo(dx - dw, t); ctx.lineTo(dx, t + dw); ctx.stroke(); }
+  ctx.restore();
+  ctx.strokeStyle = '#0a0c10'; ctx.lineWidth = s*0.04; ctx.strokeRect(dx - dw, -dh/2, dw, dh);
+  for (const y of [-1, 1]) light(ctx, dx - dw/2, y*(dh/2 + s*0.1), s*0.05, '#ff6b3d');
+  ctx.restore();
+}
+function drawArcology(ctx, cells, s, o) {
+  buildingBase(ctx, cells, s, PAL.arco);
+  const c = cells[0], ang = o.rot * Math.PI/3, rnd = rng(o.id*17 + 5);
+  for (let i = 7; i < cells.length; i++) {          // outer ring: rooftop gardens, solar, plant
+    const k = cells[i], a = Math.atan2(k.y - c.y, k.x - c.x), roll = rnd();
+    if (roll < 0.3) {
+      for (let j = 0; j < 4; j++) {
+        const bx = k.x + (rnd() - 0.5)*s*0.6, by = k.y + (rnd() - 0.5)*s*0.6, br = s*(0.14 + rnd()*0.1);
+        const g = ctx.createRadialGradient(bx - br*0.3, by - br*0.3, br*0.1, bx, by, br);
+        g.addColorStop(0, '#8fe08a'); g.addColorStop(1, '#2d6a35');
+        circle(ctx, bx, by, br); ctx.fillStyle = g; ctx.fill();
+      }
+    } else if (roll < 0.6) solar(ctx, k.x, k.y, s, a + Math.PI/2);
+    else if (roll < 0.8) acUnit(ctx, k.x, k.y, s, a);
+    else vent(ctx, k.x, k.y, s*0.25, a);
+  }
+  // raised second tier (the inner 7 hexes, scaled about the centre)
+  ctx.save(); ctx.translate(c.x, c.y); ctx.scale(0.86, 0.86); ctx.translate(-c.x, -c.y);
+  ctx.save(); ctx.translate(s*0.15, s*0.2); footprintPath(ctx, cells.slice(0, 7), s); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill(); ctx.restore();
+  buildingBase(ctx, cells.slice(0, 7), s, PAL.arcoTop);
+  for (let i = 1; i < 7; i++) {
+    const k = cells[i], a = Math.atan2(k.y - c.y, k.x - c.x);
+    if (i % 2) vent(ctx, k.x, k.y, s*0.26, a); else acUnit(ctx, k.x, k.y, s, a);
+  }
+  ctx.restore();
+  // central spire
+  ctx.beginPath(); hexSub(ctx, c.x + s*0.12, c.y + s*0.16, s*0.72); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+  ctx.beginPath(); hexSub(ctx, c.x, c.y, s*0.72); ctx.fillStyle = '#2a313b'; ctx.fill(); ctx.strokeStyle = '#c58bff'; ctx.lineWidth = s*0.06; ctx.stroke();
+  for (let i = 0; i < 6; i++) { const [x, y] = hexCorner(c.x, c.y, s*0.6, i); light(ctx, x, y, s*0.035, '#4fd1ff'); }
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
+  circle(ctx, 0, 0, s*0.28); ctx.fillStyle = '#59616c'; ctx.fill(); ctx.strokeStyle = '#1c2026'; ctx.lineWidth = s*0.035; ctx.stroke();
+  ctx.strokeStyle = '#9aa3ad'; ctx.lineWidth = s*0.05; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(s*0.5, 0); ctx.stroke();
+  light(ctx, s*0.5, 0, s*0.045, '#ff4040');
+  ctx.restore();
+}
+
+// footprint helpers: FLOWER = centre + 6 neighbours (centre first), RING2 = radius-2 hexagon (inner 7 first),
+// rowsFp([[r, qFrom, qTo], ...]) = rows of hexes
+const FLOWER = [[0,0], ...DIRS];
+const hexDist = ([q, r]) => (Math.abs(q) + Math.abs(r) + Math.abs(q + r)) / 2;
+const RING2 = brushCells({ q:0, r:0 }, 2).map(c => [c.q, c.r]).sort((a, b) => hexDist(a) - hexDist(b));
+const rowsFp = rows => rows.flatMap(([r, q0, q1]) => Array.from({ length: q1 - q0 + 1 }, (_, i) => [q0 + i, r]));
+
 const TEMPLATES = {
   barricade: { name:'Barricade',       cat:'Cover',     fp:[[0,0]],                 cover:'hard',  rotStep:30, draw:drawBarricade },
   wall:      { name:'Barricade Wall',  cat:'Cover',     fp:[[-1,0],[0,0],[1,0]],    cover:'hard',  rotStep:60, draw:drawWall },
@@ -597,7 +815,13 @@ const TEMPLATES = {
   bunker:    { name:'Bunker',          cat:'Buildings', fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawBunker },
   hab:       { name:'Hab Module',      cat:'Buildings', fp:[[0,0],[1,0]],           cover:'hard',  rotStep:60, draw:drawHab },
   warehouse: { name:'Warehouse',       cat:'Buildings', fp:[[0,0],[1,0],[0,1]],     cover:'hard',  rotStep:60, draw:drawWarehouse },
-  hq:        { name:'Command Center',  cat:'Buildings', fp:[[0,0],[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]], cover:'hard', rotStep:60, draw:drawHQ },
+  hq:        { name:'Command Center',  cat:'Buildings', fp:FLOWER, cover:'hard', rotStep:60, draw:drawHQ },
+  barracks:  { name:'Barracks',        cat:'Large Buildings', fp:[[0,0],[1,0],[2,0],[-1,1],[0,1],[1,1]], cover:'hard', rotStep:60, draw:drawBarracks },
+  reactor:   { name:'Reactor',         cat:'Large Buildings', fp:FLOWER,  cover:'hard', rotStep:60, draw:drawReactor },
+  pad:       { name:'Landing Pad',     cat:'Large Buildings', fp:FLOWER,  cover:null,   rotStep:60, draw:drawLandingPad },
+  factory:   { name:'Factory',         cat:'Large Buildings', fp:rowsFp([[-1,-1,2],[0,-2,1],[1,-2,1]]), cover:'hard', rotStep:60, draw:drawFactory },
+  hangar:    { name:'Hangar',          cat:'Large Buildings', fp:rowsFp([[-1,-1,2],[0,-2,2],[1,-2,1]]), cover:'hard', rotStep:60, draw:drawHangar },
+  arcology:  { name:'Arcology',        cat:'Large Buildings', fp:RING2,   cover:'hard', rotStep:60, draw:drawArcology },
 };
 
 /* =========================================================================
@@ -620,6 +844,8 @@ function drawMap(ctx, opt) {
     ctx.fillStyle = COVER[type].fill; ctx.fill(fill);
     ctx.strokeStyle = COVER[type].ring; ctx.lineWidth = HEX*0.05; ctx.stroke(ring);
   }
+
+  drawZones(ctx);
 
   if (S.showGrid) {
     const g = new Path2D();
@@ -647,9 +873,44 @@ function drawMap(ctx, opt) {
   } else if (ui.tool !== 'pan') {
     const p = new Path2D();
     brushCells(h, ui.brush).forEach(c => { if (inB(c.q, c.r)) { const x = axToPx(c.q, c.r); hexSub(p, x.x, x.y, HEX); } });
-    const col = { light:'rgba(70,185,85,0.3)', hard:'rgba(30,33,38,0.45)', erase:'rgba(255,107,61,0.18)' }[ui.tool];
+    const Z = ZONES[ui.tool];
+    const col = Z ? `rgba(${Z.col},0.3)` : { light:'rgba(70,185,85,0.3)', hard:'rgba(30,33,38,0.45)', erase:'rgba(255,107,61,0.18)' }[ui.tool];
     ctx.fillStyle = col; ctx.fill(p);
-    ctx.strokeStyle = ui.tool === 'erase' ? '#ff6b3d' : '#4fd1ff'; ctx.lineWidth = opt.lw * 2; ctx.stroke(p);
+    ctx.strokeStyle = Z ? `rgb(${Z.col})` : ui.tool === 'erase' ? '#ff6b3d' : '#4fd1ff'; ctx.lineWidth = opt.lw * 2; ctx.stroke(p);
+  }
+}
+
+function zoneIcon(ctx, x, y, s, Z) {
+  ctx.save(); ctx.translate(x, y); if (Z.up) ctx.rotate(Math.PI);
+  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = s*0.14; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const chev = () => { ctx.beginPath(); for (const dy of [-0.16, 0.1]) { ctx.moveTo(-s*0.24, (dy - 0.1)*s); ctx.lineTo(0, (dy + 0.1)*s); ctx.lineTo(s*0.24, (dy - 0.1)*s); } };
+  chev(); ctx.stroke();
+  chev(); ctx.strokeStyle = `rgba(${Z.col},0.95)`; ctx.lineWidth = s*0.075; ctx.stroke();
+  ctx.restore();
+}
+function drawZones(ctx) {
+  for (const type in ZONES) {
+    const Z = ZONES[type], cells = [];
+    for (const k in S.zones) {
+      if (S.zones[k] !== type) continue;
+      const [c, r] = k.split(',').map(Number), a = offToAx(c, r), p = axToPx(a.q, a.r);
+      cells.push({ q: a.q, r: a.r, x: p.x, y: p.y });
+    }
+    if (!cells.length) continue;
+    const path = new Path2D(); cells.forEach(c => hexSub(path, c.x, c.y, HEX));
+    ctx.fillStyle = `rgba(${Z.col},0.2)`; ctx.fill(path);
+    ctx.save(); ctx.clip(path);
+    const b = bbox(cells, HEX), h = b.y1 - b.y0;
+    ctx.beginPath();
+    for (let t = b.x0 - h; t < b.x1; t += HEX*0.45) { ctx.moveTo(t, b.y1); ctx.lineTo(t + h, b.y0); }
+    ctx.strokeStyle = `rgba(${Z.col},0.22)`; ctx.lineWidth = HEX*0.12; ctx.stroke();
+    const e = outerEdges(cells, HEX);
+    strokeEdges(ctx, e, HEX*0.3, `rgba(${Z.col},0.35)`);   // inner glow (clipped to the zone)
+    ctx.restore();
+    if (Z.dash) ctx.setLineDash(Z.dash.map(v => v*HEX));
+    strokeEdges(ctx, e, HEX*0.08, `rgb(${Z.col})`);
+    ctx.setLineDash([]);
+    cells.forEach(c => zoneIcon(ctx, c.x, c.y, HEX, Z));
   }
 }
 
@@ -732,9 +993,9 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && S &
 /* =========================================================================
    EDITING ACTIONS
    ========================================================================= */
-const snap = () => JSON.stringify({ cells: S.cells, objects: S.objects, nextId: S.nextId });
+const snap = () => JSON.stringify({ cells: S.cells, zones: S.zones, objects: S.objects, nextId: S.nextId });
 function pushUndo() { undoStack.push(snap()); if (undoStack.length > 200) undoStack.shift(); redoStack = []; updateUndoBtns(); }
-function restoreSnap(j) { const d = JSON.parse(j); S.cells = d.cells; S.objects = d.objects; S.nextId = d.nextId; changed(); }
+function restoreSnap(j) { const d = JSON.parse(j); S.cells = d.cells; S.zones = d.zones || {}; S.objects = d.objects; S.nextId = d.nextId; changed(); }
 function undo() { if (!undoStack.length) return; redoStack.push(snap()); restoreSnap(undoStack.pop()); updateUndoBtns(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snap()); restoreSnap(redoStack.pop()); updateUndoBtns(); }
 function updateUndoBtns() { $('btnUndo').disabled = !undoStack.length; $('btnRedo').disabled = !redoStack.length; }
@@ -742,13 +1003,16 @@ function updateUndoBtns() { $('btnUndo').disabled = !undoStack.length; $('btnRed
 function changed() { requestRender(); scheduleSave(); updateCounts(); }
 function updateCounts() {
   let l = 0, h = 0; for (const k in S.cells) S.cells[k] === 'light' ? l++ : h++;
-  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Templates: ${S.objects.length}`;
+  let dz = 0, ez = 0; for (const k in S.zones) S.zones[k] === 'deploy' ? dz++ : ez++;
+  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Deploy: ${dz} · Extract: ${ez} · Templates: ${S.objects.length}`;
 }
 function paintAt(h) {
   const k = h.q + ',' + h.r; if (k === ui.lastPaintKey) return; ui.lastPaintKey = k;
   brushCells(h, ui.brush).forEach(c => {
     if (!inB(c.q, c.r)) return; const key = keyOf(c.q, c.r);
-    if (ui.paintMode === 'erase') delete S.cells[key]; else S.cells[key] = ui.paintMode;
+    if (ui.paintMode === 'erase') { delete S.cells[key]; delete S.zones[key]; }
+    else if (ZONES[ui.paintMode]) S.zones[key] = ui.paintMode;
+    else S.cells[key] = ui.paintMode;
   });
   changed();
 }
@@ -847,6 +1111,7 @@ window.addEventListener('keydown', e => {
   }
   if (k === ' ') { e.preventDefault(); if (!ui.space) { ui.space = true; updateCursor(); } return; }
   if (k === '1') setTool('light'); else if (k === '2') setTool('hard'); else if (k === '3') setTool('erase'); else if (k === '4') setTool('pan');
+  else if (k === '5') setTool('deploy'); else if (k === '6') setTool('extract');
   else if (k === 'r') rotate(e.shiftKey ? -1 : 1);
   else if (k === 'f') fitView();
   else if (k === 'escape') setTool('light');
@@ -903,6 +1168,7 @@ function normalizeMap(d) {
     bgOpacity: typeof d.bgOpacity === 'number' ? d.bgOpacity : 1,
     showGrid: d.showGrid !== false, gridOpacity: typeof d.gridOpacity === 'number' ? d.gridOpacity : 0.45,
     cells: d.cells && typeof d.cells === 'object' ? d.cells : {},
+    zones: d.zones && typeof d.zones === 'object' ? Object.fromEntries(Object.entries(d.zones).filter(([, v]) => ZONES[v])) : {},
     objects: Array.isArray(d.objects) ? d.objects.filter(o => o && TEMPLATES[o.type]) : [],
     nextId: d.nextId || (Array.isArray(d.objects) ? d.objects.length + 1 : 1),
   };
@@ -952,7 +1218,7 @@ $('btnCreate').onclick = () => {
     version: 1, name: $('mName').value.trim() || 'New Battlefield',
     cols: clampInt($('mCols').value, 4, 100, 20), rows: clampInt($('mRows').value, 4, 100, 15),
     bg: pendingBg ? pendingBg.url : null, bgOpacity: 1, showGrid: true, gridOpacity: 0.45,
-    cells: {}, objects: [], nextId: 1,
+    cells: {}, zones: {}, objects: [], nextId: 1,
   });
 };
 $('btnContinue').onclick = () => { if (savedMap) startEditor(normalizeMap(savedMap)); };
@@ -1024,20 +1290,22 @@ $('btnExport').onclick = exportPNG;
 $('btnSaveFile').onclick = saveToFile;
 $('btnMenu').onclick = async () => { await saveNow(); S = null; bgImg = null; showMenu(); };
 $('btnClear').onclick = () => {
-  if (!confirm('Remove all cover and templates from this map? (You can undo this.)')) return;
-  pushUndo(); S.cells = {}; S.objects = []; changed();
+  if (!confirm('Remove all cover, zones and templates from this map? (You can undo this.)')) return;
+  pushUndo(); S.cells = {}; S.zones = {}; S.objects = []; changed();
 };
 $('btnResize').onclick = () => {
   const c = clampInt($('eCols').value, 4, 100, S.cols), r = clampInt($('eRows').value, 4, 100, S.rows);
   $('eCols').value = c; $('eRows').value = r;
   if (c === S.cols && r === S.rows) return;
   const old = { cols: S.cols, rows: S.rows }; S.cols = c; S.rows = r;
-  const keepCells = Object.keys(S.cells).filter(k => { const [cc, rr2] = k.split(',').map(Number); return cc < c && rr2 < r; });
+  const inside = k => { const [cc, rr2] = k.split(',').map(Number); return cc < c && rr2 < r; };
+  const keepCells = Object.keys(S.cells).filter(inside), keepZones = Object.keys(S.zones).filter(inside);
   const keepObjs = S.objects.filter(o => footprint(o.type, o.q, o.r, o.rot).every(x => inB(x.q, x.r)));
-  const lost = Object.keys(S.cells).length - keepCells.length + S.objects.length - keepObjs.length;
+  const lost = Object.keys(S.cells).length - keepCells.length + Object.keys(S.zones).length - keepZones.length + S.objects.length - keepObjs.length;
   if (lost && !confirm(`Shrinking the map will remove ${lost} painted hex(es)/template(s) outside the new edge. Continue?`)) { Object.assign(S, old); return; }
   const cells = {}; keepCells.forEach(k => cells[k] = S.cells[k]);
-  S.cells = cells; S.objects = keepObjs; undoStack = []; redoStack = []; updateUndoBtns();
+  const zones = {}; keepZones.forEach(k => zones[k] = S.zones[k]);
+  S.cells = cells; S.zones = zones; S.objects = keepObjs; undoStack = []; redoStack = []; updateUndoBtns();
   fitView(); changed();
 };
 
