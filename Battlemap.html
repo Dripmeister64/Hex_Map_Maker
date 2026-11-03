@@ -120,6 +120,13 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
 .overlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:rgba(5,8,12,.72)}
 .dialog{width:380px}
 .dialog h2{font-size:14px;color:var(--accent2);text-transform:uppercase;letter-spacing:.18em;margin-bottom:10px}
+#gmPad{display:block;width:240px;height:240px;margin:8px auto 4px;touch-action:none;cursor:pointer;user-select:none;
+  background:#0f1319;border:1px solid var(--line);border-radius:10px}
+#gmPad .dot{fill:#2a3340;stroke:#4a5a72;stroke-width:2;transition:fill .1s}
+#gmPad .dot.on{fill:var(--accent2);stroke:#c6f2ff}
+#gmPad polyline{fill:none;stroke:var(--accent2);stroke-width:7;stroke-linecap:round;stroke-linejoin:round;opacity:.65}
+#gmPad.bad .dot.on{fill:#ff5a4a;stroke:#ffc0b8}
+#gmPad.bad polyline{stroke:#ff5a4a}
 .artdlg{width:760px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column}
 #artGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px;overflow:auto;margin-top:10px;min-height:120px}
 #artGrid button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;font-size:12px;line-height:1.2}
@@ -288,11 +295,12 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
 <div id="gmDialog" class="overlay" hidden>
   <form class="card dialog" id="gmForm" autocomplete="off">
     <h2>GM unlock</h2>
-    <p class="muted">Enter the GM passcode to unlock every tool. It's shown in the Battlemap terminal window and kept in <code>gm_passcode.txt</code>.</p>
-    <input type="password" id="gmCode" inputmode="numeric" placeholder="Passcode">
+    <p class="muted">Draw the GM pattern, or tap the dots in order and press Unlock. It's shown in the Battlemap terminal window and kept in <code>gm_passcode.txt</code>.</p>
+    <svg id="gmPad" viewBox="0 0 300 300" aria-label="Pattern lock"></svg>
     <div class="err" id="gmErr"></div>
     <div class="actions">
       <button type="button" class="btn" id="gmCancel">Cancel</button>
+      <button type="button" class="btn" id="gmClear">Clear</button>
       <button type="submit" class="btn primary">Unlock</button>
     </div>
   </form>
@@ -1122,7 +1130,7 @@ window.addEventListener('resize', requestRender);
 
 const typing = e => ['INPUT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'checkbox' && e.target.type !== 'range';
 window.addEventListener('keydown', e => {
-  if (!$('gmDialog').hidden) { if (e.key === 'Escape') closeGmDialog(); return; }
+  if (!$('gmDialog').hidden) { padKey(e); return; }
   if (!$('artDialog').hidden) { if (e.key === 'Escape') $('artDialog').hidden = true; return; }
   if (!S || $('battle').style.display !== 'grid') return;
   if (typing(e)) { if (e.key === 'Enter' || e.key === 'Escape') e.target.blur(); return; }
@@ -1327,24 +1335,88 @@ function setMode(gm) {
 async function checkPasscode(code) {
   try {
     const r = await fetch('api/gm-unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: code }) });
-    return r.ok ? true : r.status === 403 ? 'Wrong passcode' : `The server couldn't check the passcode (error ${r.status}). Restart Battlemap.py.`;
+    return r.ok ? true : r.status === 403 ? 'Wrong pattern' : `The server couldn't check the pattern (error ${r.status}). Restart Battlemap.py.`;
   } catch (e) { return "Can't reach the server. Is Battlemap.py still running?"; }
 }
+
+// Pattern lock: 3×3 dots numbered 1 2 3 / 4 5 6 / 7 8 9. Drag through them like on a phone (sent as soon as
+// you let go), or tap them one at a time and press Unlock. The pattern goes to the server as its dot numbers.
+const pad = { seq: [], down: false, pt: null, gesture: 0, busy: false };
+const padXY = i => [50 + (i % 3) * 100, 50 + Math.floor(i / 3) * 100];
+(function buildPad() {
+  const svg = $('gmPad'), NS = 'http://www.w3.org/2000/svg';
+  svg.appendChild(document.createElementNS(NS, 'polyline'));
+  for (let i = 0; i < 9; i++) {
+    const c = document.createElementNS(NS, 'circle'), [x, y] = padXY(i);
+    c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 15); c.setAttribute('class', 'dot'); c.dataset.i = i;
+    svg.appendChild(c);
+  }
+})();
+function drawPad() {
+  const pts = pad.seq.map(padXY);
+  if (pad.down && pad.pt && pad.seq.length) pts.push(pad.pt);
+  $('gmPad').querySelector('polyline').setAttribute('points', pts.map(p => p.join(',')).join(' '));
+  $('gmPad').querySelectorAll('.dot').forEach(c => c.classList.toggle('on', pad.seq.includes(+c.dataset.i)));
+}
+function padReset() { pad.seq = []; pad.pt = null; $('gmPad').classList.remove('bad'); $('gmErr').textContent = ''; drawPad(); }
+function padAdd(i, dragging) {
+  if (pad.busy || pad.seq.includes(i)) return;
+  if ($('gmPad').classList.contains('bad')) padReset();
+  const last = pad.seq[pad.seq.length - 1];
+  if (dragging && last != null) {   // like a phone: dragging straight over a dot picks it up too
+    const r = Math.floor(last / 3) + Math.floor(i / 3), c = last % 3 + i % 3;
+    if (r % 2 === 0 && c % 2 === 0 && !pad.seq.includes(r / 2 * 3 + c / 2)) pad.seq.push(r / 2 * 3 + c / 2);
+  }
+  pad.seq.push(i); $('gmErr').textContent = ''; drawPad();
+}
+function padPoint(e) { const b = $('gmPad').getBoundingClientRect(); return [(e.clientX - b.left) / b.width * 300, (e.clientY - b.top) / b.height * 300]; }
+function padHit([x, y]) { for (let i = 0; i < 9; i++) { const [cx, cy] = padXY(i); if (Math.hypot(x - cx, y - cy) < 36) return i; } return null; }
+$('gmPad').addEventListener('pointerdown', e => {
+  e.preventDefault(); try { $('gmPad').setPointerCapture(e.pointerId); } catch (err) {}
+  pad.down = true; pad.gesture = 0; pad.pt = padPoint(e);
+  const i = padHit(pad.pt); if (i != null && !pad.seq.includes(i)) { padAdd(i, false); pad.gesture++; }
+});
+$('gmPad').addEventListener('pointermove', e => {
+  if (!pad.down) return;
+  pad.pt = padPoint(e);
+  const i = padHit(pad.pt);
+  if (i != null && !pad.seq.includes(i)) { padAdd(i, true); pad.gesture++; } else drawPad();
+});
+function padUp() {
+  if (!pad.down) return;
+  pad.down = false; pad.pt = null; drawPad();
+  if (pad.gesture >= 2) submitPattern();   // a drawn pattern unlocks on release; taps wait for Unlock
+}
+$('gmPad').addEventListener('pointerup', padUp);
+$('gmPad').addEventListener('pointercancel', padUp);
+function padKey(e) {
+  if (e.key === 'Escape') closeGmDialog();
+  else if (/^[1-9]$/.test(e.key)) padAdd(+e.key - 1, false);
+  else if (e.key === 'Backspace') { e.preventDefault(); pad.seq.pop(); $('gmPad').classList.remove('bad'); drawPad(); }
+  else if (e.key === 'Enter') { e.preventDefault(); submitPattern(); }
+}
+async function submitPattern() {
+  if (pad.busy) return;
+  if (pad.seq.length < 2) { $('gmErr').textContent = 'Draw the pattern, or tap its dots in order'; return; }
+  pad.busy = true;
+  const res = await checkPasscode(pad.seq.map(i => i + 1).join(''));
+  pad.busy = false;
+  if (res === true) { closeGmDialog(); setMode(true); toast('GM mode – lock the screen before handing it back'); return; }
+  $('gmErr').textContent = res; $('gmPad').classList.add('bad');
+  setTimeout(() => { if ($('gmPad').classList.contains('bad')) { pad.seq = []; $('gmPad').classList.remove('bad'); drawPad(); } }, 900);
+}
+
 function openGmDialog() {
   if (ui.gm) { setMode(false); toast('Locked – player view'); return; }
   if (location.protocol === 'file:') { setMode(true); toast('Opened without Battlemap.py, so there is no passcode check'); return; }
-  $('gmErr').textContent = ''; $('gmCode').value = ''; $('gmDialog').hidden = false; $('gmCode').focus();
+  padReset(); $('gmDialog').hidden = false;
 }
-function closeGmDialog() { $('gmDialog').hidden = true; }
+function closeGmDialog() { $('gmDialog').hidden = true; pad.down = false; }
 $('btnGm').onclick = openGmDialog;
 $('btnMenuGm').onclick = openGmDialog;
 $('gmCancel').onclick = closeGmDialog;
-$('gmForm').onsubmit = async e => {
-  e.preventDefault();
-  const res = await checkPasscode($('gmCode').value);
-  if (res === true) { closeGmDialog(); setMode(true); toast('GM mode – lock the screen before handing it back'); }
-  else { $('gmErr').textContent = res; $('gmCode').select(); }
-};
+$('gmClear').onclick = padReset;
+$('gmForm').onsubmit = e => { e.preventDefault(); submitPattern(); };
 
 /* =========================================================================
    BOOT  (always starts in the player view, on the last battle if there is one)

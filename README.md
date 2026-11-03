@@ -37,9 +37,9 @@ Running through the server lets both pages share saved data, which the battlemap
 
 ## Battlemap
 
-The battlemap always opens in the **player view**, on the last battle. That makes it suitable for a screen on the table that everyone uses. Click **🔒 GM** and enter the GM passcode to unlock everything. **Lock to player view** before handing the screen back.
+The battlemap always opens in the **player view**, on the last battle. That makes it suitable for a screen on the table that everyone uses. Click **🔒 GM** and draw the GM pattern on the 3×3 grid of dots to unlock everything. Drag through the dots like a phone's lock screen, or tap them in order and press **Unlock** (the keys `1`–`9` work too). **Lock to player view** before handing the screen back.
 
-The passcode is printed in the terminal window when `Battlemap.py` starts. It's kept in `gm_passcode.txt`, which is created with a random 4-digit code the first time; edit the file to change it. The server never hands that file to the browser. The lock keeps players from using GM tools by accident, but it isn't real security: a player with the browser's developer tools could still get around it.
+The pattern is printed in the terminal window when `Battlemap.py` starts. It's kept in `gm_passcode.txt` as the dots in the order you draw them, numbered like a phone keypad (`1 2 3` / `4 5 6` / `7 8 9`). For example, `14789` is down the left side and along the bottom. The file is created with a random 5-dot pattern the first time; edit it to change the pattern. The server never hands that file to the browser. The lock keeps players from using GM tools by accident, but it isn't real security: a player with the browser's developer tools could still get around it.
 
 | | Player view | GM mode |
 | --- | --- | --- |
