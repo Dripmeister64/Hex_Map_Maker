@@ -18,6 +18,7 @@ Running through the server lets both pages share saved data, which the battlemap
 - Paint **effects**: **difficult terrain** (hatched hexes), **dangerous terrain** (red hazard hexes) and **climbs** (ladder marks on the border between two hexes, e.g. the edge of a ledge or a building's wall). For a straight cliff, trace along the zigzag of the hex outline
 - Sci-fi templates: barricades, crates, debris, alien flora, cargo containers, fuel tanks, comms dish, bunker, hab module, warehouse and command center
 - Large buildings: barracks (6 hexes), reactor (7), landing pad (7, no cover), factory (12), hangar (13) and arcology (19)
+- Buildings get climbs all round their walls when placed (untick "Buildings add climbs at their walls" to skip this). Removing a building removes its climbs, but keeps climbs you drew yourself and walls another building still needs
 - Automatic save in the browser, so closing the tab doesn't lose your work
 - Save/open map files (`.hexmap.json`) and export the map as a PNG
 
@@ -57,8 +58,8 @@ The passcode is printed in the terminal window when `Battlemap.py` starts. It's 
 
 - Load the map that's open in the Map Maker, a `.hexmap.json` file, or a saved `.battle.json` (map and tokens together). You can also drop the file onto the page
 - Tokens for players, allies, hostiles and neutrals, in Lancer sizes ½, 1, 2, 3 and 4. Tokens snap to the hexes, can show a picture and can be renamed, duplicated and deleted
-- **Token art**: put PNG, JPG or WebP files in a `Tokens` folder next to `Battlemap.html`, then use **Art…** on a selected token to search and pick one. The app reads the frame drawn in the picture and sets the token's Size to match. Tokens only store the file name, so the art is never copied into battle files. The `Tokens` folder is git-ignored and is never committed
-- **Movement cost**: while you drag a token, its cheapest route is drawn, with the cost shown as e.g. "Move 7 (5 + 2 extra)". Every step that costs extra is marked "+1". Hard cover blocks the route (you can turn this off under Display), but a token can still end on top of it
+- **Token art**: put PNG, JPG or WebP files in a `Tokens` folder next to `Battlemap.html`, then use **Art…** on a selected token to search and pick one. The app reads the frame drawn in the picture and sets the token's Size to match. Tokens only store the file name, so the art is never copied into battle files. The art in the `Tokens` folder is git-ignored and never committed; only the empty folder is
+- **Movement cost**: while you drag a token, its cheapest route is drawn, with the cost shown as e.g. "Move 7 (5 + 2 extra)". Every step that costs extra is marked "+1". Hard cover blocks the route (you can turn this off under Display), but a token can still end on top of it. Building roofs are the exception: they are hard cover but can be climbed onto and crossed
 - **Right-drag** anywhere to measure range, edge to edge, and what moving along that line would cost. A dotted route is only shown when going round costs less than the measured line, or when hard cover blocks the line. Hexes of light or hard cover on the path are highlighted
 - Area tools: **Line**, **Cone**, **Blast** and **Burst**. Any tokens caught are ringed in orange and listed
 - **Edit map** opens the battle's map in the Map Maker, for example to add a crater or wreckage. **Back to battle** brings the changed map back with every token where it was
@@ -73,7 +74,7 @@ The passcode is printed in the terminal window when `Battlemap.py` starts. It's 
 | Cone X | X hexes long, 1 wide next to the space and X wide at the far end: a triangle of X(X+1)/2 hexes |
 | Blast X | Every hex within X of the target hex. The range from the attacker to the centre is shown |
 | Burst X | Every hex within X of the character's space, including the space itself. The user isn't hit by their own burst |
-| Movement | Each hex costs 1. A step costs 2 if it enters difficult terrain or crosses a climb. These don't stack, so climbing into difficult terrain still costs 2. Leaving difficult terrain costs nothing extra. Large tokens pay extra if any part of them enters difficult terrain or crosses a climb |
+| Movement | Each hex costs 1. A step costs 2 if it enters difficult terrain or crosses a climb. These don't stack, so climbing into difficult terrain still costs 2. Leaving difficult terrain costs nothing extra. Large tokens pay extra if any part of them enters difficult terrain or crosses a climb. Building roofs can be walked on; getting up or down costs the climb at the wall |
 | Other characters | Allies never block movement. Anyone else blocks it if they are the mover's Size or larger, so a Size 1 mech can pass a Size ½ drone. Moving next to a hostile of that Size stops movement (engagement), unless the mover started next to them. You can't end a move in an occupied space. Starting a move next to a hostile may provoke Overwatch. Hidden tokens are left out for players |
 | Dangerous terrain | No extra movement cost, but entering it means an Engineering check or 5 damage. Routes avoid it when that costs nothing extra |
 | Cover | Hard cover: the target is next to hard cover and every line between the two spaces passes through hard cover. If a clear line exists, the target is flanked. Soft cover: the line between their centres passes light cover, or hard cover the target isn't next to. Shown when measuring between two tokens and for each target an area attack hits (from the blast centre for Blast). Being next to a hostile gives +1 Difficulty on ranged attacks |

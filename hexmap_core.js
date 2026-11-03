@@ -594,17 +594,35 @@ const TEMPLATES = {
   container: { name:'Cargo Container', cat:'Props',     fp:[[0,0],[1,0]],           cover:'hard',  rotStep:60, draw:drawContainer },
   tanks:     { name:'Fuel Tanks',      cat:'Props',     fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawTanks },
   comms:     { name:'Comms Dish',      cat:'Props',     fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawComms },
-  bunker:    { name:'Bunker',          cat:'Buildings', fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawBunker },
-  hab:       { name:'Hab Module',      cat:'Buildings', fp:[[0,0],[1,0]],           cover:'hard',  rotStep:60, draw:drawHab },
-  warehouse: { name:'Warehouse',       cat:'Buildings', fp:[[0,0],[1,0],[0,1]],     cover:'hard',  rotStep:60, draw:drawWarehouse },
-  hq:        { name:'Command Center',  cat:'Buildings', fp:FLOWER, cover:'hard', rotStep:60, draw:drawHQ },
-  barracks:  { name:'Barracks',        cat:'Large Buildings', fp:[[0,0],[1,0],[2,0],[-1,1],[0,1],[1,1]], cover:'hard', rotStep:60, draw:drawBarracks },
-  reactor:   { name:'Reactor',         cat:'Large Buildings', fp:FLOWER,  cover:'hard', rotStep:60, draw:drawReactor },
+  bunker:    { name:'Bunker',          cat:'Buildings', fp:[[0,0]],                 cover:'hard',  roof:true, rotStep:60, draw:drawBunker },
+  hab:       { name:'Hab Module',      cat:'Buildings', fp:[[0,0],[1,0]],           cover:'hard',  roof:true, rotStep:60, draw:drawHab },
+  warehouse: { name:'Warehouse',       cat:'Buildings', fp:[[0,0],[1,0],[0,1]],     cover:'hard',  roof:true, rotStep:60, draw:drawWarehouse },
+  hq:        { name:'Command Center',  cat:'Buildings', fp:FLOWER, cover:'hard', roof:true, rotStep:60, draw:drawHQ },
+  barracks:  { name:'Barracks',        cat:'Large Buildings', fp:[[0,0],[1,0],[2,0],[-1,1],[0,1],[1,1]], cover:'hard', roof:true, rotStep:60, draw:drawBarracks },
+  reactor:   { name:'Reactor',         cat:'Large Buildings', fp:FLOWER,  cover:'hard', roof:true, rotStep:60, draw:drawReactor },
   pad:       { name:'Landing Pad',     cat:'Large Buildings', fp:FLOWER,  cover:null,   rotStep:60, draw:drawLandingPad },
-  factory:   { name:'Factory',         cat:'Large Buildings', fp:rowsFp([[-1,-1,2],[0,-2,1],[1,-2,1]]), cover:'hard', rotStep:60, draw:drawFactory },
-  hangar:    { name:'Hangar',          cat:'Large Buildings', fp:rowsFp([[-1,-1,2],[0,-2,2],[1,-2,1]]), cover:'hard', rotStep:60, draw:drawHangar },
-  arcology:  { name:'Arcology',        cat:'Large Buildings', fp:RING2,   cover:'hard', rotStep:60, draw:drawArcology },
+  factory:   { name:'Factory',         cat:'Large Buildings', fp:rowsFp([[-1,-1,2],[0,-2,1],[1,-2,1]]), cover:'hard', roof:true, rotStep:60, draw:drawFactory },
+  hangar:    { name:'Hangar',          cat:'Large Buildings', fp:rowsFp([[-1,-1,2],[0,-2,2],[1,-2,1]]), cover:'hard', roof:true, rotStep:60, draw:drawHangar },
+  arcology:  { name:'Arcology',        cat:'Large Buildings', fp:RING2,   cover:'hard', roof:true, rotStep:60, draw:drawArcology },
 };
+
+// Buildings (templates with roof:true) can be climbed onto and walked across.
+// The borders around a building's footprint, as climb keys; borders on the map's edge are left out
+function outlineEdges(cells) {
+  const own = new Set(cells.map(c => c.q + ',' + c.r)), out = [];
+  for (const c of cells) for (const [dq, dr] of DIRS) {
+    const n = { q: c.q + dq, r: c.r + dr };
+    if (!own.has(n.q + ',' + n.r) && inB(n.q, n.r)) out.push(edgeKey(c, n));
+  }
+  return out;
+}
+// Map keys of every hex that is part of a building's roof
+function roofHexes() {
+  const out = new Set();
+  for (const o of S.objects) if (TEMPLATES[o.type] && TEMPLATES[o.type].roof)
+    footprint(o.type, o.q, o.r, o.rot).forEach(c => out.add(keyOf(c.q, c.r)));
+  return out;
+}
 
 /* =========================================================================
    MAP RENDERING

@@ -256,7 +256,7 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
     <section>
       <h3>Display</h3>
       <label class="chk"><input type="checkbox" id="showNames" checked> Show token names</label>
-      <label class="chk gm-only"><input type="checkbox" id="hardBlocks" checked> Hard cover blocks movement</label>
+      <label class="chk gm-only"><input type="checkbox" id="hardBlocks" checked> Hard cover blocks movement (roofs can be climbed)</label>
       <label class="chk gm-only"><input type="checkbox" id="showGrid" checked> Show grid lines</label>
       <div class="gm-only"><label>Grid line opacity</label><input type="range" id="gridOp" min="0.05" max="1" step="0.05"></div>
     </section>
@@ -465,12 +465,13 @@ function moveRules(t, from, to) {
     if (hostileTo(t, o) && o.size >= t.size && setDist(start, oc).d > 1)
       for (const c of oc) for (const [dq, dr] of DIRS) { const k = (c.q + dq) + ',' + (c.r + dr); if (!zone.has(k)) zone.set(k, o); }
   }
-  const openMemo = new Map();
+  // building roofs are hard cover but can be walked on; getting up there costs a climb at the wall
+  const openMemo = new Map(), roofs = roofHexes();
   const open = (q, r) => {
     const k = q + ',' + r; let v = openMemo.get(k);
     if (v === undefined) openMemo.set(k, v = cellsAt(q, r).every(c => {
-      const ck = hkey(c);
-      return inB(c.q, c.r) && (own.has(ck) || ((!ui.hardBlocks || S.cells[keyOf(c.q, c.r)] !== 'hard') && !blockers.has(ck)));
+      const ck = hkey(c), mk = keyOf(c.q, c.r);
+      return inB(c.q, c.r) && (own.has(ck) || ((!ui.hardBlocks || S.cells[mk] !== 'hard' || roofs.has(mk)) && !blockers.has(ck)));
     }));
     return v;
   };

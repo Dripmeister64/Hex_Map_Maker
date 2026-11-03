@@ -203,6 +203,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
         <kbd>R</kbd>
       </div>
       <label class="chk"><input type="checkbox" id="autoCover" checked> Templates also mark cover</label>
+      <label class="chk"><input type="checkbox" id="autoClimb" checked> Buildings add climbs at their walls</label>
     </section>
 
     <section>
@@ -249,7 +250,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
 let S = null;            // the current map (everything here gets saved)
 let bgImg = null;        // decoded background image
 const view = { scale: 1, ox: 0, oy: 0 };
-const ui = { tool:'light', brush:0, template:null, rot:0, autoCover:true, hover:null, hoverEdge:null,
+const ui = { tool:'light', brush:0, template:null, rot:0, autoCover:true, autoClimb:true, hover:null, hoverEdge:null,
              painting:false, paintMode:null, lastPaintKey:null, panning:false, last:null, space:false };
 let undoStack = [], redoStack = [];
 
@@ -367,6 +368,11 @@ function removeObject(i) {
   const o = S.objects[i];
   if (o.cover) footprint(o.type, o.q, o.r, o.rot).forEach(c => { const k = keyOf(c.q, c.r); if (S.cells[k] === o.cover) delete S.cells[k]; });
   S.objects.splice(i, 1);
+  // take away this building's wall climbs, except where another building still has a wall
+  if (o.climbs && o.climbs.length) {
+    const kept = new Set(S.objects.flatMap(x => x.climbs || []));
+    o.climbs.forEach(k => { if (!kept.has(k)) delete S.edges[k]; });
+  }
 }
 function placeTemplate(h) {
   const T = TEMPLATES[ui.template], cells = footprint(ui.template, h.q, h.r, ui.rot);
@@ -374,6 +380,13 @@ function placeTemplate(h) {
   pushUndo();
   const o = { id: S.nextId++, type: ui.template, q: h.q, r: h.r, rot: ui.rot, cover: null };
   if (ui.autoCover && T.cover) { o.cover = T.cover; cells.forEach(c => S.cells[keyOf(c.q, c.r)] = T.cover); }
+  // a building records its wall climbs, including ones shared with another building's wall, but never
+  // hand-drawn ones, so removing it leaves those alone
+  if (ui.autoClimb && T.roof) {
+    const owned = new Set(S.objects.flatMap(x => x.climbs || []));
+    o.climbs = outlineEdges(cells).filter(k => !S.edges[k] || owned.has(k));
+    o.climbs.forEach(k => S.edges[k] = 'climb');
+  }
   S.objects.push(o); changed();
 }
 function setTool(t) {
@@ -594,6 +607,7 @@ document.querySelectorAll('#brushSeg button').forEach(b => b.onclick = () => set
 $('rotL').onclick = () => rotate(-1);
 $('rotR').onclick = () => rotate(1);
 $('autoCover').onchange = e => { ui.autoCover = e.target.checked; };
+$('autoClimb').onchange = e => { ui.autoClimb = e.target.checked; };
 $('showGrid').onchange = e => { S.showGrid = e.target.checked; requestRender(); scheduleSave(); };
 $('gridOp').oninput = e => { S.gridOpacity = +e.target.value; requestRender(); scheduleSave(); };
 $('bgOp').oninput = e => { S.bgOpacity = +e.target.value; requestRender(); scheduleSave(); };

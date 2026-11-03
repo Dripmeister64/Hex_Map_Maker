@@ -1,5 +1,7 @@
 __pycache__/
 gm_passcode.txt
-# purchased token art: used locally by the battlemap, never committed
-Tokens/
-tokens/
+# purchased token art: used locally by the battlemap, never committed.
+# The folder itself is kept (through .gitkeep) so it's there to drop art into.
+Tokens/*
+tokens/*
+!Tokens/.gitkeep
