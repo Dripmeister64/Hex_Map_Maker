@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lancer Hex Map Maker</title>
+<style>
+:root{
+  --bg:#0d1015; --panel:#151a21; --panel2:#1c232d; --line:#2a3340; --text:#d8dfe8;
+  --muted:#8693a3; --accent:#ff6b3d; --accent2:#4fd1ff;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:"Segoe UI",system-ui,sans-serif;font-size:14px;overflow:hidden}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:.06em}
+.muted{color:var(--muted);font-size:12px}
+kbd{font-family:Consolas,monospace;font-size:11px;color:var(--muted);border:1px solid var(--line);
+  border-radius:3px;padding:0 4px;margin-left:auto}
+input[type=text],input[type=number],input:not([type]){background:#0f1319;color:var(--text);
+  border:1px solid var(--line);border-radius:5px;padding:7px 9px;font:inherit;width:100%}
+input:focus{outline:none;border-color:var(--accent2)}
+input[type=range]{width:100%;accent-color:var(--accent2)}
+input[type=checkbox]{accent-color:var(--accent2)}
+.btn{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;
+  padding:7px 12px;cursor:pointer;font:inherit;white-space:nowrap}
+.btn:hover{border-color:#41506a;background:#232c39}
+.btn:disabled{opacity:.4;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#170d08;font-weight:600}
+.btn.primary:hover{background:#ff8458}
+.btn.danger:hover{border-color:#c0392b;background:#3a1a17}
+.btn.small{padding:4px 9px;font-size:12px}
+
+/* ---------- MENU ---------- */
+#menu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at 30% 20%,#1b2633 0%,#0d1015 60%);overflow:auto;padding:20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:28px 30px;width:480px;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);position:relative}
+.card::before{content:"";position:absolute;left:0;top:0;right:0;height:3px;border-radius:12px 12px 0 0;
+  background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.brand{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.logo{font-size:38px;color:var(--accent);line-height:1}
+.brand h1{font-size:22px}
+.brand .sub{color:var(--muted);font-size:12px;letter-spacing:.15em;text-transform:uppercase}
+.card h2{font-size:12px;color:var(--accent2);text-transform:uppercase;letter-spacing:.18em;margin:18px 0 10px}
+.field{display:block;margin-bottom:12px}
+.field>span{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.row{display:flex;gap:12px}.row>*{flex:1}
+.presets{display:flex;gap:6px;align-items:center;margin:-2px 0 12px;flex-wrap:wrap}
+.continue{display:flex;align-items:center;gap:12px;justify-content:space-between;background:#1a2430;
+  border:1px solid #2c4256;border-radius:8px;padding:12px 14px}
+.bgpick{display:flex;gap:10px;align-items:center}
+#bgName{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+#bgPreview{display:block;max-width:100%;max-height:150px;margin:10px auto 0;border:1px solid var(--line);border-radius:6px}
+.actions{display:flex;justify-content:space-between;gap:10px;margin-top:22px}
+
+/* ---------- EDITOR ---------- */
+#editor{position:fixed;inset:0;display:none;grid-template-columns:250px 1fr;grid-template-rows:50px 1fr 28px;
+  grid-template-areas:"top top" "side stage" "status status"}
+#topbar{grid-area:top;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--panel);
+  border-bottom:1px solid var(--line)}
+#topbar .logo{font-size:26px}
+#eName{width:240px;background:transparent;border-color:transparent;font-weight:600;font-size:15px}
+#eName:hover{border-color:var(--line)}
+.grow{flex:1}
+.sep{width:1px;height:24px;background:var(--line);margin:0 4px}
+#sidebar{grid-area:side;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;overflow-x:hidden;padding:6px 12px 20px}
+#sidebar section{padding:12px 0;border-bottom:1px solid var(--line)}
+#sidebar section:last-child{border-bottom:none}
+#sidebar h3{font-size:11px;color:var(--accent2);text-transform:uppercase;letter-spacing:.18em;margin-bottom:10px}
+#sidebar label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+#sidebar label.chk{display:flex;align-items:center;gap:7px;color:var(--text);font-size:13px}
+.tools{display:grid;gap:5px}
+.tool{display:flex;align-items:center;gap:9px;text-align:left}
+.tool.active,.tpl.active,.seg button.active{border-color:var(--accent2);background:#18293a;box-shadow:inset 0 0 0 1px var(--accent2)}
+.sw{width:16px;height:16px;border-radius:3px;border:1px solid rgba(255,255,255,.25);flex:none;
+  clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
+.sw.erase{background:repeating-linear-gradient(45deg,#ff6b3d 0 3px,transparent 3px 6px)}
+.seg{display:flex;gap:4px;margin-top:8px;align-items:center}
+.seg span{font-size:12px;color:var(--muted);margin-right:4px}
+.seg button{flex:1}
+.tplcat{font-size:11px;color:var(--muted);margin:10px 0 5px;text-transform:uppercase;letter-spacing:.1em}
+.tplgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.tpl{display:flex;flex-direction:column;align-items:center;padding:4px 2px 5px;gap:2px;font-size:10.5px;line-height:1.15;text-align:center}
+.tpl canvas{width:100%;max-width:62px;height:auto}
+.tpl{min-width:0;overflow:hidden;white-space:normal}
+.rotrow{display:flex;align-items:center;gap:6px;margin-top:10px}
+#rotLabel{min-width:48px;text-align:center;font-family:Consolas,monospace}
+.btnrow{display:flex;gap:6px;margin-top:8px}.btnrow>*{flex:1}
+#stage{grid-area:stage;position:relative;overflow:hidden;
+  background:#0a0d11 repeating-linear-gradient(0deg,transparent 0 39px,#10151b 39px 40px),
+             repeating-linear-gradient(90deg,transparent 0 39px,#10151b 39px 40px)}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
+#status{grid-area:status;display:flex;align-items:center;gap:18px;padding:0 12px;background:var(--panel);
+  border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+#stSave.ok{color:#6fd18a}#stSave.bad{color:#ff6b6b}
+#toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:#1e2a36;border:1px solid #33506a;
+  padding:8px 16px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ====================== MAIN MENU ====================== -->
+<div id="menu">
+  <div class="card">
+    <div class="brand">
+      <span class="logo">⬡</span>
+      <div><h1>HEX MAP MAKER</h1><div class="sub">Battlemap builder for Lancer</div></div>
+    </div>
+
+    <div id="continueBox" class="continue" hidden>
+      <div><b>Continue last map</b><div id="continueInfo" class="muted"></div></div>
+      <button class="btn primary" id="btnContinue">Continue</button>
+    </div>
+
+    <h2>New map</h2>
+    <label class="field"><span>Map name</span><input id="mName" value="New Battlefield"></label>
+    <div class="row">
+      <label class="field"><span>Columns (hexes wide)</span><input type="number" id="mCols" min="4" max="100" value="20"></label>
+      <label class="field"><span>Rows (hexes tall)</span><input type="number" id="mRows" min="4" max="100" value="15"></label>
+    </div>
+    <div class="presets">
+      <span class="muted">Presets:</span>
+      <button class="btn small" data-c="12" data-r="10">Small 12×10</button>
+      <button class="btn small" data-c="20" data-r="15">Medium 20×15</button>
+      <button class="btn small" data-c="30" data-r="22">Large 30×22</button>
+    </div>
+
+    <label class="field"><span>Background image (optional)</span></label>
+    <div class="bgpick">
+      <button class="btn" id="btnPickBg">Choose image…</button>
+      <span id="bgName">None</span>
+      <button class="btn small" id="btnClearBg" hidden>✕</button>
+    </div>
+    <img id="bgPreview" hidden alt="">
+    <div style="text-align:center;margin-top:8px">
+      <button class="btn small" id="btnMatchRows" hidden>Match rows to image shape</button>
+    </div>
+
+    <div class="actions">
+      <button class="btn" id="btnLoadFile">Open map file…</button>
+      <button class="btn primary" id="btnCreate">Create map ▸</button>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== EDITOR ====================== -->
+<div id="editor">
+  <header id="topbar">
+    <span class="logo">⬡</span>
+    <input id="eName" title="Map name">
+    <div class="sep"></div>
+    <button class="btn" id="btnUndo" title="Ctrl+Z">↶ Undo</button>
+    <button class="btn" id="btnRedo" title="Ctrl+Y">↷ Redo</button>
+    <button class="btn" id="btnFit" title="F">⤢ Fit view</button>
+    <div class="grow"></div>
+    <button class="btn" id="btnExport">Export PNG</button>
+    <button class="btn" id="btnSaveFile" title="Ctrl+S">Save to file</button>
+    <button class="btn" id="btnMenu">Main menu</button>
+  </header>
+
+  <aside id="sidebar">
+    <section>
+      <h3>Paint</h3>
+      <div class="tools">
+        <button class="btn tool" data-tool="light"><span class="sw" style="background:#46b955"></span>Light cover<kbd>1</kbd></button>
+        <button class="btn tool" data-tool="hard"><span class="sw" style="background:#3a3e45"></span>Hard cover<kbd>2</kbd></button>
+        <button class="btn tool" data-tool="erase"><span class="sw erase"></span>Eraser<kbd>3</kbd></button>
+        <button class="btn tool" data-tool="pan"><span style="width:16px;text-align:center">✋</span>Pan view<kbd>4</kbd></button>
+      </div>
+      <div class="seg" id="brushSeg">
+        <span>Brush</span>
+        <button class="btn small" data-b="0">1 hex</button>
+        <button class="btn small" data-b="1">7</button>
+        <button class="btn small" data-b="2">19</button>
+      </div>
+    </section>
+
+    <section>
+      <h3>Templates</h3>
+      <div id="tplList"></div>
+      <div class="rotrow">
+        <button class="btn small" id="rotL" title="Shift+R">⟲</button>
+        <span id="rotLabel">0°</span>
+        <button class="btn small" id="rotR" title="R">⟳</button>
+        <kbd>R</kbd>
+      </div>
+      <label class="chk"><input type="checkbox" id="autoCover" checked> Templates also mark cover</label>
+    </section>
+
+    <section>
+      <h3>Display</h3>
+      <label class="chk"><input type="checkbox" id="showGrid" checked> Show grid lines</label>
+      <label>Grid line opacity</label><input type="range" id="gridOp" min="0.05" max="1" step="0.05">
+      <label>Background opacity</label><input type="range" id="bgOp" min="0" max="1" step="0.05">
+      <div class="btnrow">
+        <button class="btn small" id="btnBg">Background…</button>
+        <button class="btn small" id="btnBgRemove">Remove bg</button>
+      </div>
+    </section>
+
+    <section>
+      <h3>Map</h3>
+      <div class="row">
+        <div><label>Columns</label><input type="number" id="eCols" min="4" max="100"></div>
+        <div><label>Rows</label><input type="number" id="eRows" min="4" max="100"></div>
+      </div>
+      <div class="btnrow">
+        <button class="btn small" id="btnResize">Apply size</button>
+        <button class="btn small danger" id="btnClear">Clear all</button>
+      </div>
+    </section>
+  </aside>
+
+  <main id="stage"><canvas id="cv"></canvas><div id="toast"></div></main>
+
+  <footer id="status">
+    <span id="stHex">Hex —</span>
+    <span id="stCounts"></span>
+    <span class="grow"></span>
+    <span>Right-click: remove · Wheel: zoom · Space/middle-drag: pan · R: rotate · Esc: deselect</span>
+    <span id="stSave"></span>
+  </footer>
+</div>
+
+<input type="file" id="fileBg" accept="image/*" hidden>
+<input type="file" id="fileMap" accept=".json,application/json" hidden>
+
+<script>
+"use strict";
+/* =========================================================================
+   CONSTANTS & GEOMETRY  (pointy-top hexes, "odd-r" offset layout)
+   ========================================================================= */
+const SQRT3 = Math.sqrt(3), TAU = Math.PI * 2, HEX = 50;   // HEX = hex radius in world px
+const DIRS = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]];       // DIRS[i] is the neighbour across edge i
+const COVER = {
+  light: { fill:'rgba(70,185,85,0.55)', ring:'rgba(160,255,170,0.35)', label:'Light cover' },
+  hard:  { fill:'rgba(62,66,74,0.92)',  ring:'rgba(185,195,210,0.40)', label:'Hard cover'  },
+};
+
+let S = null;            // the current map (everything here gets saved)
+let bgImg = null;        // decoded background image
+const view = { scale: 1, ox: 0, oy: 0 };
+const ui = { tool:'light', brush:0, template:null, rot:0, autoCover:true, hover:null,
+             painting:false, paintMode:null, lastPaintKey:null, panning:false, last:null, space:false };
+let undoStack = [], redoStack = [];
+
+const gridW = () => HEX * SQRT3 * (S.cols + 0.5);
+const gridH = () => HEX * (1.5 * S.rows + 0.5);
+const axToPx = (q, r) => ({ x: HEX*SQRT3*(q + r/2) + HEX*SQRT3/2, y: HEX*1.5*r + HEX });
+const offToAx = (c, r) => ({ q: c - (r - (r & 1)) / 2, r });
+const axToOff = (q, r) => ({ c: q + (r - (r & 1)) / 2, r });
+const keyOf = (q, r) => { const o = axToOff(q, r); return o.c + ',' + o.r; };
+function inB(q, r) { const o = axToOff(q, r); return o.r >= 0 && o.r < S.rows && o.c >= 0 && o.c < S.cols; }
+
+function axRound(fq, fr) {
+  const fs = -fq - fr;
+  let q = Math.round(fq), r = Math.round(fr), s = Math.round(fs);
+  const dq = Math.abs(q - fq), dr = Math.abs(r - fr), ds = Math.abs(s - fs);
+  if (dq > dr && dq > ds) q = -r - s; else if (dr > ds) r = -q - s;
+  return { q, r };
+}
+function pxToAx(x, y) {
+  const px = x - HEX*SQRT3/2, py = y - HEX;
+  return axRound((px/SQRT3 - py/3) / HEX, (2/3 * py) / HEX);
+}
+function rotAx(q, r, n) { n = ((n % 6) + 6) % 6; for (let i = 0; i < n; i++) { const t = q; q = -r; r = t + r; } return [q, r]; }
+function brushCells(h, rad) {
+  const out = [];
+  for (let dq = -rad; dq <= rad; dq++)
+    for (let dr = Math.max(-rad, -dq - rad); dr <= Math.min(rad, -dq + rad); dr++)
+      out.push({ q: h.q + dq, r: h.r + dr });
+  return out;
+}
+function footprint(type, q, r, rot) {
+  return TEMPLATES[type].fp.map(([dq, dr]) => {
+    const [a, b] = rotAx(dq, dr, rot); const Q = q + a, R = r + b; const p = axToPx(Q, R);
+    return { q: Q, r: R, x: p.x, y: p.y };
+  });
+}
+
+/* =========================================================================
+   DRAWING HELPERS
+   ========================================================================= */
+function hexCorner(x, y, s, i) { const a = Math.PI/180 * (60*i - 30); return [x + s*Math.cos(a), y + s*Math.sin(a)]; }
+function hexSub(ctx, x, y, s) {
+  for (let i = 0; i < 6; i++) { const [px, py] = hexCorner(x, y, s, i); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+  ctx.closePath();
+}
+function footprintPath(ctx, cells, s) { ctx.beginPath(); cells.forEach(c => hexSub(ctx, c.x, c.y, s)); }
+function outerEdges(cells, s) {
+  const set = new Set(cells.map(c => c.q + ',' + c.r)), edges = [];
+  cells.forEach(c => { for (let i = 0; i < 6; i++)
+    if (!set.has((c.q + DIRS[i][0]) + ',' + (c.r + DIRS[i][1])))
+      edges.push([hexCorner(c.x, c.y, s, i), hexCorner(c.x, c.y, s, (i + 1) % 6)]); });
+  return edges;
+}
+function strokeEdges(ctx, edges, w, col) {
+  ctx.beginPath(); edges.forEach(([a, b]) => { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); });
+  ctx.lineWidth = w; ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+}
+function bbox(cells, s) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  cells.forEach(c => { x0 = Math.min(x0, c.x - s); y0 = Math.min(y0, c.y - s); x1 = Math.max(x1, c.x + s); y1 = Math.max(y1, c.y + s); });
+  return { x0, y0, x1, y1 };
+}
+function rr(ctx, x, y, w, h, r) {
+  r = Math.min(r, w/2, h/2); ctx.beginPath(); ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+const rotV = (x, y, a) => [x*Math.cos(a) - y*Math.sin(a), x*Math.sin(a) + y*Math.cos(a)];
+function rng(seed) {
+  let a = (seed * 2654435761) >>> 0 || 1;
+  return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function circle(ctx, x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); }
+function light(ctx, x, y, r, col) {
+  ctx.save(); ctx.globalAlpha *= 0.3; circle(ctx, x, y, r * 2.4); ctx.fillStyle = col; ctx.fill(); ctx.restore();
+  circle(ctx, x, y, r); ctx.fillStyle = col; ctx.fill();
+}
+function vent(ctx, x, y, r, rot = 0) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  circle(ctx, 0, 0, r); ctx.fillStyle = '#181d24'; ctx.fill(); ctx.lineWidth = r*0.2; ctx.strokeStyle = '#9aa3ad'; ctx.stroke();
+  ctx.fillStyle = '#56606b';
+  for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI/2); ctx.beginPath(); ctx.ellipse(r*0.42, 0, r*0.38, r*0.15, 0.5, 0, TAU); ctx.fill(); }
+  circle(ctx, 0, 0, r*0.18); ctx.fillStyle = '#9aa3ad'; ctx.fill();
+  ctx.restore();
+}
+function acUnit(ctx, x, y, s, ang) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  const w = s*0.46, h = s*0.34;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-w/2 + s*0.05, -h/2 + s*0.06, w, h);
+  ctx.fillStyle = '#5b6470'; ctx.fillRect(-w/2, -h/2, w, h);
+  ctx.strokeStyle = '#1c2026'; ctx.lineWidth = s*0.03; ctx.strokeRect(-w/2, -h/2, w, h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = s*0.02;
+  for (let i = 1; i < 5; i++) { const yy = -h/2 + h*i/5; ctx.beginPath(); ctx.moveTo(-w/2 + s*0.04, yy); ctx.lineTo(w*0.05, yy); ctx.stroke(); }
+  circle(ctx, w*0.24, 0, h*0.32); ctx.fillStyle = '#2a3038'; ctx.fill(); ctx.strokeStyle = '#8b95a1'; ctx.stroke();
+  ctx.restore();
+}
+
+/* Generic sci-fi building roof: fills the footprint, adds inset trim, accent edge and drop shadow */
+const PAL = {
+  bunker: { roof:'#6b7480', trim:'#4a525c', accent:'#4fd1ff' },
+  hab:    { roof:'#aab5c1', trim:'#7b8794', accent:'#4fd1ff' },
+  ware:   { roof:'#857558', trim:'#5c513e', accent:'#ffb347' },
+  hq:     { roof:'#4b5563', trim:'#323a45', accent:'#ff6b3d' },
+};
+function buildingBase(ctx, cells, s, pal) {
+  ctx.save(); ctx.translate(s*0.12, s*0.16); footprintPath(ctx, cells, s);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill(); ctx.restore();
+  footprintPath(ctx, cells, s); ctx.fillStyle = pal.roof; ctx.fill();
+  const b = bbox(cells, s), e = outerEdges(cells, s);
+  ctx.save(); footprintPath(ctx, cells, s); ctx.clip();
+  const g = ctx.createLinearGradient(b.x0, b.y0, b.x1, b.y1);
+  g.addColorStop(0, 'rgba(255,255,255,0.14)'); g.addColorStop(1, 'rgba(0,0,0,0.24)');
+  ctx.fillStyle = g; ctx.fillRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+  strokeEdges(ctx, e, s*0.40, 'rgba(0,0,0,0.45)');
+  strokeEdges(ctx, e, s*0.35, pal.trim);
+  strokeEdges(ctx, e, s*0.13, pal.accent);
+  ctx.restore();
+  strokeEdges(ctx, e, s*0.05, '#0a0c10');
+}
+
+/* Concrete jersey-barrier style bar with hazard-striped ends */
+function drawBar(ctx, x, y, ang, L, W, s) {
+  ctx.save(); ctx.translate(x + s*0.07, y + s*0.1); ctx.rotate(ang);
+  rr(ctx, -L/2, -W/2, L, W, W*0.25); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill(); ctx.restore();
+
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  const g = ctx.createLinearGradient(0, -W/2, 0, W/2);
+  g.addColorStop(0, '#b6bdc5'); g.addColorStop(0.5, '#8f979f'); g.addColorStop(1, '#5e656d');
+  rr(ctx, -L/2, -W/2, L, W, W*0.25); ctx.fillStyle = g; ctx.fill();
+  ctx.save(); ctx.clip();
+  const hz = Math.min(W*1.1, L*0.2), inner = L - 2*hz;
+  for (const side of [-1, 1]) {
+    const x0 = side < 0 ? -L/2 : L/2 - hz;
+    ctx.save(); ctx.beginPath(); ctx.rect(x0, -W/2, hz, W); ctx.clip();
+    ctx.fillStyle = '#f2c230'; ctx.fillRect(x0, -W/2, hz, W);
+    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = W*0.22; ctx.lineCap = 'butt';
+    for (let t = -W*2; t < hz + W*2; t += W*0.55) { ctx.beginPath(); ctx.moveTo(x0 + t, -W/2); ctx.lineTo(x0 + t + W, W/2); ctx.stroke(); }
+    ctx.restore();
+  }
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = W*0.07;
+  const segs = Math.max(1, Math.round(inner / (W*1.8)));
+  for (let i = 1; i < segs; i++) { const px = -L/2 + hz + inner*i/segs; ctx.beginPath(); ctx.moveTo(px, -W/2); ctx.lineTo(px, W/2); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(-L/2 + hz, -W*0.14, inner, W*0.13);
+  ctx.fillStyle = 'rgba(79,209,255,0.9)'; ctx.fillRect(-L/2 + hz + W*0.25, W*0.2, Math.max(0, inner - W*0.5), W*0.08);
+  ctx.restore();
+  rr(ctx, -L/2, -W/2, L, W, W*0.25); ctx.strokeStyle = '#1c2026'; ctx.lineWidth = W*0.09; ctx.stroke();
+  ctx.restore();
+}
+
+/* =========================================================================
+   TEMPLATES (2D art)
+   ========================================================================= */
+function drawBarricade(ctx, cells, s, o) { const c = cells[0]; drawBar(ctx, c.x, c.y, o.rot * Math.PI/6, s*1.5, s*0.34, s); }
+function drawWall(ctx, cells, s) {
+  const a = cells[0], b = cells[cells.length - 1];
+  drawBar(ctx, (a.x + b.x)/2, (a.y + b.y)/2, Math.atan2(b.y - a.y, b.x - a.x), Math.hypot(b.x - a.x, b.y - a.y) + s*1.2, s*0.38, s);
+}
+function drawCrates(ctx, cells, s, o) {
+  const c = cells[0], rnd = rng(o.id*31 + o.rot), ang = o.rot * Math.PI/3;
+  const cols = ['#6b705c', '#56606e', '#7a6248', '#5f6b52'];
+  const [sx, sy] = rotV(s*0.07, s*0.1, -ang);
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
+  [[-0.28, -0.2, 0.48], [0.27, 0.02, 0.42], [-0.05, 0.37, 0.34]].forEach(([bx, by, bs]) => {
+    const a = (rnd() - 0.5) * 0.5, w = bs*s;
+    ctx.save(); ctx.translate(bx*s, by*s); ctx.rotate(a);
+    const [lx, ly] = rotV(sx, sy, -a);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(-w/2 + lx, -w/2 + ly, w, w);
+    ctx.fillStyle = cols[Math.floor(rnd() * cols.length)]; ctx.fillRect(-w/2, -w/2, w, w);
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(-w/2, -w/2, w, w*0.45);
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = s*0.025;
+    ctx.strokeRect(-w*0.36, -w*0.36, w*0.72, w*0.72);
+    ctx.beginPath(); ctx.moveTo(-w*0.36, -w*0.36); ctx.lineTo(w*0.36, w*0.36); ctx.moveTo(w*0.36, -w*0.36); ctx.lineTo(-w*0.36, w*0.36); ctx.stroke();
+    ctx.fillStyle = '#ff8a3d'; ctx.fillRect(-w/2, -w/2, w, w*0.1);
+    ctx.strokeStyle = '#1c2026'; ctx.lineWidth = s*0.035; ctx.strokeRect(-w/2, -w/2, w, w);
+    ctx.restore();
+  });
+  ctx.restore();
+}
+function drawDebris(ctx, cells, s, o) {
+  const c = cells[0], rnd = rng(o.id*7 + 3 + o.rot);
+  const tones = ['#6e6a64', '#857c70', '#5b5f66', '#77706a'];
+  const pieces = [];
+  for (let i = 0; i < 8; i++) {
+    const a = rnd()*TAU, d = Math.sqrt(rnd()) * s*0.55, r = s*(0.1 + rnd()*0.16), n = 5 + Math.floor(rnd()*3), pr = rnd()*TAU;
+    const col = tones[Math.floor(rnd()*tones.length)], pts = [];
+    for (let k = 0; k < n; k++) { const aa = pr + k/n*TAU, rad = r*(0.6 + rnd()*0.5); pts.push([Math.cos(a)*d + Math.cos(aa)*rad, Math.sin(a)*d + Math.sin(aa)*rad]); }
+    pieces.push({ pts, col });
+  }
+  const poly = (pts, dx, dy) => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x + dx, y + dy) : ctx.moveTo(x + dx, y + dy)); ctx.closePath(); };
+  ctx.save(); ctx.translate(c.x, c.y);
+  circle(ctx, 0, 0, s*0.72); ctx.fillStyle = 'rgba(95,85,72,0.3)'; ctx.fill();
+  pieces.forEach(p => { poly(p.pts, s*0.06, s*0.08); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill(); });
+  pieces.forEach(p => { poly(p.pts, 0, 0); ctx.fillStyle = p.col; ctx.fill(); ctx.strokeStyle = '#2a2826'; ctx.lineWidth = s*0.025; ctx.stroke(); });
+  ctx.strokeStyle = '#a06a42'; ctx.lineWidth = s*0.028; ctx.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    const a = rnd()*TAU, d = rnd()*s*0.4, x = Math.cos(a)*d, y = Math.sin(a)*d, b = rnd()*TAU;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(b)*s*0.3, y + Math.sin(b)*s*0.3); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawFlora(ctx, cells, s, o) {
+  const c = cells[0], rnd = rng(o.id*13 + o.rot);
+  const blobs = [];
+  for (let i = 0; i < 7; i++) {
+    const a = rnd()*TAU, d = Math.sqrt(rnd()) * s*0.45;
+    blobs.push({ x: Math.cos(a)*d, y: Math.sin(a)*d, r: s*(0.17 + rnd()*0.14), p: rnd() < 0.65 });
+  }
+  ctx.save(); ctx.translate(c.x, c.y);
+  blobs.forEach(b => { circle(ctx, b.x + s*0.07, b.y + s*0.09, b.r); ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fill(); });
+  blobs.forEach(b => {
+    const g = ctx.createRadialGradient(b.x - b.r*0.3, b.y - b.r*0.3, b.r*0.1, b.x, b.y, b.r);
+    if (b.p) { g.addColorStop(0, '#6ff0d0'); g.addColorStop(1, '#126b5a'); } else { g.addColorStop(0, '#c99cff'); g.addColorStop(1, '#4a2a7a'); }
+    circle(ctx, b.x, b.y, b.r); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = s*0.02; ctx.stroke();
+  });
+  for (let i = 0; i < 6; i++) { const a = rnd()*TAU, d = rnd()*s*0.5; light(ctx, Math.cos(a)*d, Math.sin(a)*d, s*0.025, '#c8fff4'); }
+  ctx.restore();
+}
+function drawContainer(ctx, cells, s, o) {
+  const [a, b] = cells, ang = Math.atan2(b.y - a.y, b.x - a.x);
+  const L = Math.hypot(b.x - a.x, b.y - a.y) + s*1.0, W = s*0.78, mx = (a.x + b.x)/2, my = (a.y + b.y)/2;
+  const col = ['#b5542d', '#2f6db0', '#4f8a3a', '#c99a22', '#7a3fa0'][Math.floor(rng(o.id*5 + 1)() * 5)];
+  ctx.save(); ctx.translate(mx + s*0.08, my + s*0.11); ctx.rotate(ang); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(-L/2, -W/2, L, W); ctx.restore();
+  ctx.save(); ctx.translate(mx, my); ctx.rotate(ang);
+  ctx.fillStyle = col; ctx.fillRect(-L/2, -W/2, L, W);
+  const g = ctx.createLinearGradient(0, -W/2, 0, W/2);
+  g.addColorStop(0, 'rgba(255,255,255,0.2)'); g.addColorStop(1, 'rgba(0,0,0,0.28)'); ctx.fillStyle = g; ctx.fillRect(-L/2, -W/2, L, W);
+  ctx.strokeStyle = 'rgba(0,0,0,0.28)'; ctx.lineWidth = s*0.03;
+  for (let x = -L/2 + s*0.2; x < L/2 - s*0.15; x += s*0.11) { ctx.beginPath(); ctx.moveTo(x, -W/2 + s*0.05); ctx.lineTo(x, W/2 - s*0.05); ctx.stroke(); }
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-L/2, -W/2, s*0.12, W); ctx.fillRect(L/2 - s*0.12, -W/2, s*0.12, W);
+  ctx.fillStyle = '#d8dde3';
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([i, j]) => ctx.fillRect(i*L/2 - (i > 0 ? s*0.1 : 0), j*W/2 - (j > 0 ? s*0.1 : 0), s*0.1, s*0.1));
+  ctx.fillStyle = 'rgba(240,240,240,0.85)'; ctx.fillRect(-s*0.4, -s*0.07, s*0.8, s*0.14);
+  ctx.fillStyle = '#1c2026'; for (let i = 0; i < 5; i++) ctx.fillRect(-s*0.34 + i*s*0.14, -s*0.035, s*0.08, s*0.07);
+  ctx.strokeStyle = '#15181c'; ctx.lineWidth = s*0.04; ctx.strokeRect(-L/2, -W/2, L, W);
+  ctx.restore();
+}
+function drawTanks(ctx, cells, s, o) {
+  const c = cells[0], ang = o.rot * Math.PI/3, [sx, sy] = rotV(s*0.07, s*0.1, -ang);
+  const tanks = [[-0.27, -0.13, 0.4], [0.37, 0.23, 0.3]];
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
+  ctx.strokeStyle = '#2d333b'; ctx.lineWidth = s*0.13; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-0.27*s, -0.13*s); ctx.lineTo(0.37*s, 0.23*s); ctx.stroke();
+  ctx.strokeStyle = '#7d8793'; ctx.lineWidth = s*0.07; ctx.stroke();
+  tanks.forEach(([tx, ty, tr]) => { circle(ctx, tx*s + sx, ty*s + sy, tr*s); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill(); });
+  tanks.forEach(([tx, ty, tr]) => {
+    const x = tx*s, y = ty*s, r = tr*s;
+    const g = ctx.createRadialGradient(x - r*0.35, y - r*0.35, r*0.1, x, y, r);
+    g.addColorStop(0, '#eef1f4'); g.addColorStop(0.6, '#a9b2bc'); g.addColorStop(1, '#5f6873');
+    circle(ctx, x, y, r); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = '#1f242a'; ctx.lineWidth = s*0.04; ctx.stroke();
+    circle(ctx, x, y, r*0.68); ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = s*0.025; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, r*0.86, -0.6, 0.6); ctx.strokeStyle = '#ff6b3d'; ctx.lineWidth = s*0.05; ctx.stroke();
+    circle(ctx, x, y, r*0.2); ctx.fillStyle = '#3a414a'; ctx.fill();
+  });
+  ctx.restore();
+}
+function drawComms(ctx, cells, s, o) {
+  const c = cells[0], ang = o.rot * Math.PI/3, [sx, sy] = rotV(s*0.08, s*0.11, -ang);
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(ang);
+  ctx.beginPath(); hexSub(ctx, sx, sy, s*0.62); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
+  ctx.beginPath(); hexSub(ctx, 0, 0, s*0.62); ctx.fillStyle = '#39404a'; ctx.fill(); ctx.strokeStyle = '#1b1f25'; ctx.lineWidth = s*0.04; ctx.stroke();
+  ctx.beginPath(); hexSub(ctx, 0, 0, s*0.5); ctx.strokeStyle = '#f2c230'; ctx.setLineDash([s*0.08, s*0.08]); ctx.lineWidth = s*0.04; ctx.stroke(); ctx.setLineDash([]);
+  const dx = s*0.05, dy = -s*0.05, R = s*0.43;
+  circle(ctx, dx + sx*1.4, dy + sy*1.4, R); ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fill();
+  const g = ctx.createRadialGradient(dx - R*0.3, dy - R*0.3, R*0.1, dx, dy, R);
+  g.addColorStop(0, '#f3f5f7'); g.addColorStop(0.7, '#aab3bd'); g.addColorStop(1, '#6b7480');
+  circle(ctx, dx, dy, R); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = '#22272e'; ctx.lineWidth = s*0.04; ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = s*0.018;
+  circle(ctx, dx, dy, R*0.66); ctx.stroke();
+  for (let i = 0; i < 8; i++) { const a = i/8*TAU; ctx.beginPath(); ctx.moveTo(dx, dy); ctx.lineTo(dx + Math.cos(a)*R, dy + Math.sin(a)*R); ctx.stroke(); }
+  const fx = dx + R*0.2, fy = dy - R*0.2;
+  ctx.strokeStyle = '#2b3038'; ctx.lineWidth = s*0.035;
+  [Math.PI/2, Math.PI*7/6, -Math.PI/6].forEach(a => { ctx.beginPath(); ctx.moveTo(dx + Math.cos(a)*R*0.95, dy + Math.sin(a)*R*0.95); ctx.lineTo(fx, fy); ctx.stroke(); });
+  circle(ctx, fx, fy, s*0.07); ctx.fillStyle = '#2b3038'; ctx.fill();
+  light(ctx, fx, fy, s*0.03, '#ff4040');
+  ctx.restore();
+}
+function drawBunker(ctx, cells, s, o) {
+  buildingBase(ctx, cells, s, PAL.bunker);
+  const c = cells[0];
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(o.rot * Math.PI/3);
+  ctx.beginPath(); hexSub(ctx, 0, 0, s*0.46); ctx.fillStyle = '#7f8995'; ctx.fill(); ctx.lineWidth = s*0.04; ctx.strokeStyle = '#2b3038'; ctx.stroke();
+  ctx.fillStyle = '#0b0f14'; ctx.fillRect(s*0.47, -s*0.24, s*0.14, s*0.48);
+  ctx.fillStyle = 'rgba(79,209,255,0.9)'; ctx.fillRect(s*0.53, -s*0.2, s*0.035, s*0.4);
+  circle(ctx, 0, 0, s*0.2); ctx.fillStyle = '#59616c'; ctx.fill(); ctx.strokeStyle = '#2b3038'; ctx.lineWidth = s*0.035; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-s*0.13, 0); ctx.lineTo(s*0.13, 0); ctx.moveTo(0, -s*0.13); ctx.lineTo(0, s*0.13); ctx.stroke();
+  light(ctx, -s*0.3, -s*0.42, s*0.035, '#ff6b3d');
+  ctx.restore();
+}
+function drawHab(ctx, cells, s) {
+  buildingBase(ctx, cells, s, PAL.hab);
+  const [a, b] = cells, ang = Math.atan2(b.y - a.y, b.x - a.x);
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+  ctx.strokeStyle = '#2c333c'; ctx.lineWidth = s*0.36; ctx.stroke();
+  ctx.strokeStyle = '#8995a3'; ctx.lineWidth = s*0.28; ctx.stroke();
+  ctx.strokeStyle = 'rgba(79,209,255,0.85)'; ctx.lineWidth = s*0.04; ctx.lineCap = 'butt'; ctx.stroke();
+  [a, b].forEach(c => vent(ctx, c.x, c.y, s*0.27, ang));
+  ctx.save(); ctx.translate((a.x + b.x)/2, (a.y + b.y)/2); ctx.rotate(ang);
+  ctx.fillStyle = '#26384a';
+  for (const side of [-1, 1]) for (let i = -1; i <= 1; i++) {
+    ctx.fillRect(i*s*0.2 - s*0.07, side*s*0.42 - s*0.08, s*0.14, s*0.16);
+    ctx.fillStyle = 'rgba(79,209,255,0.35)'; ctx.fillRect(i*s*0.2 - s*0.07, side*s*0.42 - s*0.08, s*0.14, s*0.05); ctx.fillStyle = '#26384a';
+  }
+  ctx.restore();
+}
+function drawWarehouse(ctx, cells, s, o) {
+  buildingBase(ctx, cells, s, PAL.ware);
+  const cx = cells.reduce((t, c) => t + c.x, 0) / cells.length, cy = cells.reduce((t, c) => t + c.y, 0) / cells.length;
+  ctx.save(); footprintPath(ctx, cells, s*0.8); ctx.clip();
+  ctx.translate(cx, cy); ctx.rotate(o.rot * Math.PI/3);
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = s*0.035;
+  for (let x = -2.5*s; x <= 2.5*s; x += s*0.16) { ctx.beginPath(); ctx.moveTo(x, -2.5*s); ctx.lineTo(x, 2.5*s); ctx.stroke(); }
+  ctx.restore();
+  vent(ctx, cells[0].x, cells[0].y, s*0.32, o.rot);
+  for (const c of [cells[1], cells[2]]) {
+    ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(o.rot * Math.PI/3 + Math.PI/2);
+    ctx.fillStyle = '#1c2a35'; ctx.fillRect(-s*0.3, -s*0.14, s*0.6, s*0.28);
+    ctx.fillStyle = 'rgba(120,215,255,0.5)'; ctx.fillRect(-s*0.27, -s*0.11, s*0.54, s*0.1);
+    ctx.strokeStyle = '#2d2a24'; ctx.lineWidth = s*0.03; ctx.strokeRect(-s*0.3, -s*0.14, s*0.6, s*0.28);
+    ctx.beginPath(); ctx.moveTo(0, -s*0.14); ctx.lineTo(0, s*0.14); ctx.stroke();
+    ctx.restore();
+  }
+  light(ctx, cx, cy, s*0.05, PAL.ware.accent);
+}
+function drawHQ(ctx, cells, s, o) {
+  buildingBase(ctx, cells, s, PAL.hq);
+  const c = cells[0];
+  for (let i = 1; i < cells.length; i++) {
+    const k = cells[i], ang = Math.atan2(k.y - c.y, k.x - c.x);
+    if (i % 2) vent(ctx, k.x, k.y, s*0.25, ang); else acUnit(ctx, k.x, k.y, s, ang);
+    light(ctx, c.x + (k.x - c.x)*1.42, c.y + (k.y - c.y)*1.42, s*0.05, PAL.hq.accent);
+  }
+  ctx.beginPath(); hexSub(ctx, c.x, c.y, s*0.95); ctx.fillStyle = '#39414d'; ctx.fill(); ctx.lineWidth = s*0.06; ctx.strokeStyle = '#1b2028'; ctx.stroke();
+  circle(ctx, c.x, c.y, s*0.6); ctx.fillStyle = '#262c35'; ctx.fill(); ctx.lineWidth = s*0.06; ctx.strokeStyle = '#f2c230'; ctx.stroke();
+  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(o.rot * Math.PI/3);
+  ctx.strokeStyle = '#f2c230'; ctx.lineWidth = s*0.09; ctx.lineCap = 'butt'; ctx.beginPath();
+  ctx.moveTo(-s*0.2, -s*0.28); ctx.lineTo(-s*0.2, s*0.28); ctx.moveTo(s*0.2, -s*0.28); ctx.lineTo(s*0.2, s*0.28);
+  ctx.moveTo(-s*0.2, 0); ctx.lineTo(s*0.2, 0); ctx.stroke();
+  ctx.restore();
+  for (let i = 0; i < 8; i++) { const a = i/8*TAU; light(ctx, c.x + Math.cos(a)*s*0.77, c.y + Math.sin(a)*s*0.77, s*0.035, '#4fd1ff'); }
+}
+
+const TEMPLATES = {
+  barricade: { name:'Barricade',       cat:'Cover',     fp:[[0,0]],                 cover:'hard',  rotStep:30, draw:drawBarricade },
+  wall:      { name:'Barricade Wall',  cat:'Cover',     fp:[[-1,0],[0,0],[1,0]],    cover:'hard',  rotStep:60, draw:drawWall },
+  crates:    { name:'Cargo Crates',    cat:'Cover',     fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawCrates },
+  debris:    { name:'Debris',          cat:'Cover',     fp:[[0,0]],                 cover:'light', rotStep:60, draw:drawDebris },
+  flora:     { name:'Alien Flora',     cat:'Cover',     fp:[[0,0]],                 cover:'light', rotStep:60, draw:drawFlora },
+  container: { name:'Cargo Container', cat:'Props',     fp:[[0,0],[1,0]],           cover:'hard',  rotStep:60, draw:drawContainer },
+  tanks:     { name:'Fuel Tanks',      cat:'Props',     fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawTanks },
+  comms:     { name:'Comms Dish',      cat:'Props',     fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawComms },
+  bunker:    { name:'Bunker',          cat:'Buildings', fp:[[0,0]],                 cover:'hard',  rotStep:60, draw:drawBunker },
+  hab:       { name:'Hab Module',      cat:'Buildings', fp:[[0,0],[1,0]],           cover:'hard',  rotStep:60, draw:drawHab },
+  warehouse: { name:'Warehouse',       cat:'Buildings', fp:[[0,0],[1,0],[0,1]],     cover:'hard',  rotStep:60, draw:drawWarehouse },
+  hq:        { name:'Command Center',  cat:'Buildings', fp:[[0,0],[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]], cover:'hard', rotStep:60, draw:drawHQ },
+};
+
+/* =========================================================================
+   MAP RENDERING
+   ========================================================================= */
+function drawMap(ctx, opt) {
+  const W = gridW(), H = gridH();
+  ctx.fillStyle = '#1a1f27'; ctx.fillRect(0, 0, W, H);
+  if (bgImg) { ctx.globalAlpha = S.bgOpacity; ctx.drawImage(bgImg, 0, 0, W, H); ctx.globalAlpha = 1; }
+
+  // cover fills, batched per type
+  for (const type of ['light', 'hard']) {
+    const fill = new Path2D(), ring = new Path2D(); let any = false;
+    for (const k in S.cells) {
+      if (S.cells[k] !== type) continue;
+      const [c, r] = k.split(',').map(Number), a = offToAx(c, r), p = axToPx(a.q, a.r);
+      hexSub(fill, p.x, p.y, HEX); hexSub(ring, p.x, p.y, HEX*0.78); any = true;
+    }
+    if (!any) continue;
+    ctx.fillStyle = COVER[type].fill; ctx.fill(fill);
+    ctx.strokeStyle = COVER[type].ring; ctx.lineWidth = HEX*0.05; ctx.stroke(ring);
+  }
+
+  if (S.showGrid) {
+    const g = new Path2D();
+    for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) { const a = offToAx(c, r), p = axToPx(a.q, a.r); hexSub(g, p.x, p.y, HEX); }
+    ctx.strokeStyle = `rgba(210,225,245,${S.gridOpacity})`; ctx.lineWidth = opt.lw; ctx.stroke(g);
+  }
+
+  for (const o of S.objects) {
+    const T = TEMPLATES[o.type]; if (!T) continue;
+    ctx.save(); T.draw(ctx, footprint(o.type, o.q, o.r, o.rot), HEX, o); ctx.restore();
+  }
+
+  ctx.strokeStyle = 'rgba(255,107,61,0.5)'; ctx.lineWidth = opt.lw * 1.5; ctx.strokeRect(0, 0, W, H);
+
+  if (!opt.live || !ui.hover || ui.panning) return;
+  const h = ui.hover;
+  if (ui.tool === 'template' && ui.template) {
+    const cells = footprint(ui.template, h.q, h.r, ui.rot), ok = cells.every(c => inB(c.q, c.r));
+    ctx.save(); ctx.globalAlpha = 0.7;
+    TEMPLATES[ui.template].draw(ctx, cells, HEX, { id: S.nextId, rot: ui.rot, type: ui.template });
+    ctx.restore();
+    footprintPath(ctx, cells, HEX);
+    ctx.fillStyle = ok ? 'rgba(79,209,255,0.12)' : 'rgba(255,60,60,0.4)'; ctx.fill();
+    ctx.strokeStyle = ok ? '#4fd1ff' : '#ff4b4b'; ctx.lineWidth = opt.lw * 2; ctx.stroke();
+  } else if (ui.tool !== 'pan') {
+    const p = new Path2D();
+    brushCells(h, ui.brush).forEach(c => { if (inB(c.q, c.r)) { const x = axToPx(c.q, c.r); hexSub(p, x.x, x.y, HEX); } });
+    const col = { light:'rgba(70,185,85,0.3)', hard:'rgba(30,33,38,0.45)', erase:'rgba(255,107,61,0.18)' }[ui.tool];
+    ctx.fillStyle = col; ctx.fill(p);
+    ctx.strokeStyle = ui.tool === 'erase' ? '#ff6b3d' : '#4fd1ff'; ctx.lineWidth = opt.lw * 2; ctx.stroke(p);
+  }
+}
+
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+let renderQueued = false;
+function requestRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(render); } }
+function render() {
+  renderQueued = false;
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w*dpr) || cv.height !== Math.round(h*dpr)) { cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); }
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!S) return;
+  ctx.setTransform(dpr*view.scale, 0, 0, dpr*view.scale, dpr*view.ox, dpr*view.oy);
+  drawMap(ctx, { lw: 1.2 / view.scale, live: true });
+}
+function fitView() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  view.scale = Math.min((w - 40) / gridW(), (h - 40) / gridH());
+  view.ox = (w - gridW()*view.scale) / 2; view.oy = (h - gridH()*view.scale) / 2;
+  requestRender();
+}
+
+/* =========================================================================
+   STORAGE  (IndexedDB autosave, falls back to localStorage)
+   ========================================================================= */
+// Some browsers never answer IndexedDB requests on file:// pages, so give up after a short wait.
+// Both stores are read on load and the newest save wins.
+const store = {
+  db: null,
+  async init() {
+    try {
+      this.db = await new Promise((res, rej) => {
+        setTimeout(() => rej(new Error('IndexedDB timed out')), 1500);
+        const rq = indexedDB.open('lancer-hexmap', 1);
+        rq.onupgradeneeded = () => rq.result.createObjectStore('maps');
+        rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error);
+      });
+    } catch (e) { console.warn('IndexedDB unavailable, using localStorage', e); this.db = null; }
+  },
+  idbGet(k) {
+    return new Promise((res, rej) => {
+      const rq = this.db.transaction('maps').objectStore('maps').get(k);
+      rq.onsuccess = () => res(rq.result || null); rq.onerror = () => rej(rq.error);
+    });
+  },
+  idbPut(k, v) {
+    return new Promise((res, rej) => {
+      const tx = this.db.transaction('maps', 'readwrite'); tx.objectStore('maps').put(v, k);
+      tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+    });
+  },
+  async get(k) {
+    let a = null, b = null;
+    if (this.db) try { a = await this.idbGet(k); } catch (e) { console.warn(e); }
+    try { const v = localStorage.getItem('lhm_' + k); b = v ? JSON.parse(v) : null; } catch (e) { console.warn(e); }
+    if (!a || !b) return a || b;
+    return (b.savedAt || 0) > (a.savedAt || 0) ? b : a;
+  },
+  async put(k, v) {
+    v.savedAt = Date.now();
+    if (this.db) {
+      try { await this.idbPut(k, v); try { localStorage.removeItem('lhm_' + k); } catch (e) {} return; }
+      catch (e) { console.warn('IndexedDB save failed, trying localStorage', e); }
+    }
+    localStorage.setItem('lhm_' + k, JSON.stringify(v));
+  },
+};
+let saveTimer = null, dirty = false;
+const $ = id => document.getElementById(id);
+function setSaveStatus(t, cls) { const el = $('stSave'); el.textContent = t; el.className = cls || ''; }
+function scheduleSave() { dirty = true; setSaveStatus('Unsaved changes…'); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 600); }
+async function saveNow() {
+  clearTimeout(saveTimer); if (!S) return;
+  try { await store.put('autosave', S); dirty = false; setSaveStatus('Autosaved ✓', 'ok'); }
+  catch (e) { console.error(e); setSaveStatus('Autosave failed (background image too big?) – use "Save to file"', 'bad'); }
+}
+window.addEventListener('beforeunload', () => { if (S && dirty) saveNow(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && S && dirty) saveNow(); });
+
+/* =========================================================================
+   EDITING ACTIONS
+   ========================================================================= */
+const snap = () => JSON.stringify({ cells: S.cells, objects: S.objects, nextId: S.nextId });
+function pushUndo() { undoStack.push(snap()); if (undoStack.length > 200) undoStack.shift(); redoStack = []; updateUndoBtns(); }
+function restoreSnap(j) { const d = JSON.parse(j); S.cells = d.cells; S.objects = d.objects; S.nextId = d.nextId; changed(); }
+function undo() { if (!undoStack.length) return; redoStack.push(snap()); restoreSnap(undoStack.pop()); updateUndoBtns(); }
+function redo() { if (!redoStack.length) return; undoStack.push(snap()); restoreSnap(redoStack.pop()); updateUndoBtns(); }
+function updateUndoBtns() { $('btnUndo').disabled = !undoStack.length; $('btnRedo').disabled = !redoStack.length; }
+
+function changed() { requestRender(); scheduleSave(); updateCounts(); }
+function updateCounts() {
+  let l = 0, h = 0; for (const k in S.cells) S.cells[k] === 'light' ? l++ : h++;
+  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Templates: ${S.objects.length}`;
+}
+function paintAt(h) {
+  const k = h.q + ',' + h.r; if (k === ui.lastPaintKey) return; ui.lastPaintKey = k;
+  brushCells(h, ui.brush).forEach(c => {
+    if (!inB(c.q, c.r)) return; const key = keyOf(c.q, c.r);
+    if (ui.paintMode === 'erase') delete S.cells[key]; else S.cells[key] = ui.paintMode;
+  });
+  changed();
+}
+function objectAt(h) {
+  for (let i = S.objects.length - 1; i >= 0; i--) {
+    const o = S.objects[i];
+    if (footprint(o.type, o.q, o.r, o.rot).some(c => c.q === h.q && c.r === h.r)) return i;
+  }
+  return -1;
+}
+function removeObject(i) {
+  const o = S.objects[i];
+  if (o.cover) footprint(o.type, o.q, o.r, o.rot).forEach(c => { const k = keyOf(c.q, c.r); if (S.cells[k] === o.cover) delete S.cells[k]; });
+  S.objects.splice(i, 1);
+}
+function placeTemplate(h) {
+  const T = TEMPLATES[ui.template], cells = footprint(ui.template, h.q, h.r, ui.rot);
+  if (!cells.every(c => inB(c.q, c.r))) { toast("That template doesn't fit there"); return; }
+  pushUndo();
+  const o = { id: S.nextId++, type: ui.template, q: h.q, r: h.r, rot: ui.rot, cover: null };
+  if (ui.autoCover && T.cover) { o.cover = T.cover; cells.forEach(c => S.cells[keyOf(c.q, c.r)] = T.cover); }
+  S.objects.push(o); changed();
+}
+function setTool(t) {
+  ui.tool = t; if (t !== 'template') ui.template = null;
+  document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  document.querySelectorAll('.tpl').forEach(b => b.classList.toggle('active', b.dataset.tpl === ui.template));
+  updateCursor(); updateRotLabel(); requestRender();
+}
+function selectTemplate(type) {
+  if (ui.template === type) { setTool('light'); return; }
+  ui.template = type; setTool('template');
+}
+function rotate(d) { ui.rot = ((ui.rot + d) % 6 + 6) % 6; updateRotLabel(); requestRender(); }
+function updateRotLabel() { const st = ui.template ? TEMPLATES[ui.template].rotStep : 60; $('rotLabel').textContent = (ui.rot * st) + '°'; }
+function setBrush(b) { ui.brush = b; document.querySelectorAll('#brushSeg button').forEach(x => x.classList.toggle('active', +x.dataset.b === b)); requestRender(); }
+function updateCursor() { cv.style.cursor = ui.panning ? 'grabbing' : (ui.space || ui.tool === 'pan') ? 'grab' : 'crosshair'; }
+let toastT = null;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1800); }
+
+/* =========================================================================
+   CANVAS INPUT
+   ========================================================================= */
+function worldAt(e) { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left - view.ox) / view.scale, y: (e.clientY - r.top - view.oy) / view.scale }; }
+function hexAt(e) { const w = worldAt(e), h = pxToAx(w.x, w.y); return inB(h.q, h.r) ? h : null; }
+
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+cv.addEventListener('pointerdown', e => {
+  if (!S) return;
+  cv.setPointerCapture(e.pointerId);
+  if (e.button === 1 || (e.button === 0 && (ui.space || ui.tool === 'pan'))) {
+    ui.panning = true; ui.last = { x: e.clientX, y: e.clientY }; updateCursor(); requestRender(); return;
+  }
+  const h = hexAt(e); if (!h) return;
+  if (e.button === 2) {
+    const i = objectAt(h);
+    if (i >= 0) { pushUndo(); removeObject(i); changed(); return; }
+    pushUndo(); ui.painting = true; ui.paintMode = 'erase'; ui.lastPaintKey = null; paintAt(h); return;
+  }
+  if (e.button !== 0) return;
+  if (ui.tool === 'template') { placeTemplate(h); return; }
+  pushUndo(); ui.painting = true; ui.paintMode = ui.tool; ui.lastPaintKey = null; paintAt(h);
+});
+cv.addEventListener('pointermove', e => {
+  if (!S) return;
+  if (ui.panning) { view.ox += e.clientX - ui.last.x; view.oy += e.clientY - ui.last.y; ui.last = { x: e.clientX, y: e.clientY }; requestRender(); return; }
+  const h = hexAt(e);
+  const prev = ui.hover; ui.hover = h;
+  if (h) { const o = axToOff(h.q, h.r); $('stHex').textContent = `Hex ${o.c + 1}, ${o.r + 1}`; } else $('stHex').textContent = 'Hex —';
+  if (ui.painting && h) paintAt(h);
+  if (!prev || !h || prev.q !== h.q || prev.r !== h.r) requestRender();
+});
+function endPointer() { ui.painting = false; ui.panning = false; updateCursor(); requestRender(); }
+cv.addEventListener('pointerup', endPointer);
+cv.addEventListener('pointercancel', endPointer);
+cv.addEventListener('pointerleave', () => { if (!ui.painting && !ui.panning) { ui.hover = null; requestRender(); } });
+cv.addEventListener('wheel', e => {
+  if (!S) return; e.preventDefault();
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const ns = Math.min(8, Math.max(0.05, view.scale * Math.exp(-e.deltaY * 0.0015)));
+  view.ox = mx - (mx - view.ox) * ns / view.scale; view.oy = my - (my - view.oy) * ns / view.scale; view.scale = ns;
+  requestRender();
+}, { passive: false });
+window.addEventListener('resize', requestRender);
+
+const typing = e => ['INPUT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'checkbox' && e.target.type !== 'range';
+window.addEventListener('keydown', e => {
+  if (!S || $('editor').style.display !== 'grid' || typing(e)) return;
+  const k = e.key.toLowerCase();
+  if (e.ctrlKey || e.metaKey) {
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+    else if (k === 's') { e.preventDefault(); saveToFile(); }
+    return;
+  }
+  if (k === ' ') { e.preventDefault(); if (!ui.space) { ui.space = true; updateCursor(); } return; }
+  if (k === '1') setTool('light'); else if (k === '2') setTool('hard'); else if (k === '3') setTool('erase'); else if (k === '4') setTool('pan');
+  else if (k === 'r') rotate(e.shiftKey ? -1 : 1);
+  else if (k === 'f') fitView();
+  else if (k === 'escape') setTool('light');
+});
+window.addEventListener('keyup', e => { if (e.key === ' ') { if (!typing(e)) e.preventDefault(); ui.space = false; updateCursor(); } });
+
+/* =========================================================================
+   FILES: images, export, save/load
+   ========================================================================= */
+function readImageFile(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onerror = () => rej(new Error('Could not read file'));
+    fr.onload = () => {
+      const img = new Image();
+      img.onerror = () => rej(new Error('That file is not a supported image'));
+      img.onload = () => {
+        // keep saves small enough for browser storage: shrink/compress big images
+        const MAX = 3000; let url = fr.result;
+        if (Math.max(img.width, img.height) > MAX || url.length > 2500000) {
+          const k = Math.min(1, MAX / Math.max(img.width, img.height)), c = document.createElement('canvas');
+          c.width = Math.round(img.width*k); c.height = Math.round(img.height*k);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); url = c.toDataURL('image/jpeg', 0.9);
+        }
+        res({ url, w: img.width, h: img.height });
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+function loadBgImage() {
+  bgImg = null; if (!S.bg) { requestRender(); return; }
+  const img = new Image(); img.onload = () => { bgImg = img; requestRender(); }; img.src = S.bg;
+}
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+const safeName = () => (S.name || 'map').replace(/[^\w\- ]+/g, '').trim() || 'map';
+function exportPNG() {
+  const k = Math.min(2, 8000 / Math.max(gridW(), gridH()));
+  const c = document.createElement('canvas'); c.width = Math.ceil(gridW()*k); c.height = Math.ceil(gridH()*k);
+  const x = c.getContext('2d'); x.scale(k, k); drawMap(x, { lw: 1.5, live: false });
+  c.toBlob(b => { download(b, safeName() + '.png'); toast('PNG exported'); });
+}
+function saveToFile() { download(new Blob([JSON.stringify(S)], { type: 'application/json' }), safeName() + '.hexmap.json'); toast('Map file saved'); }
+function normalizeMap(d) {
+  if (!d || typeof d !== 'object' || !(d.cols >= 1) || !(d.rows >= 1)) throw new Error('Not a valid map file');
+  return {
+    version: 1, name: String(d.name || 'Untitled map'),
+    cols: Math.min(100, Math.round(d.cols)), rows: Math.min(100, Math.round(d.rows)),
+    bg: typeof d.bg === 'string' ? d.bg : null,
+    bgOpacity: typeof d.bgOpacity === 'number' ? d.bgOpacity : 1,
+    showGrid: d.showGrid !== false, gridOpacity: typeof d.gridOpacity === 'number' ? d.gridOpacity : 0.45,
+    cells: d.cells && typeof d.cells === 'object' ? d.cells : {},
+    objects: Array.isArray(d.objects) ? d.objects.filter(o => o && TEMPLATES[o.type]) : [],
+    nextId: d.nextId || (Array.isArray(d.objects) ? d.objects.length + 1 : 1),
+  };
+}
+
+/* =========================================================================
+   MENU
+   ========================================================================= */
+let pendingBg = null, bgTarget = 'menu', savedMap = null;
+const clampInt = (v, lo, hi, def) => { v = parseInt(v, 10); return isNaN(v) ? def : Math.min(hi, Math.max(lo, v)); };
+
+function showMenu() {
+  $('editor').style.display = 'none'; $('menu').style.display = 'flex';
+  store.get('autosave').then(m => {
+    savedMap = m;
+    $('continueBox').hidden = !m;
+    if (m) $('continueInfo').textContent = `"${m.name}" · ${m.cols}×${m.rows} hexes · ${m.objects.length} templates`;
+  }).catch(() => { $('continueBox').hidden = true; });
+}
+function startEditor(map) {
+  S = map; undoStack = []; redoStack = []; updateUndoBtns();
+  $('menu').style.display = 'none'; $('editor').style.display = 'grid';
+  $('eName').value = S.name; $('eCols').value = S.cols; $('eRows').value = S.rows;
+  $('showGrid').checked = S.showGrid; $('gridOp').value = S.gridOpacity; $('bgOp').value = S.bgOpacity;
+  loadBgImage(); updateCounts(); setTool('light'); setBrush(ui.brush);
+  requestAnimationFrame(() => { fitView(); });
+  saveNow();
+}
+function setPendingBg(r, name) {
+  pendingBg = r;
+  $('bgName').textContent = r ? name : 'None';
+  $('btnClearBg').hidden = $('btnMatchRows').hidden = $('bgPreview').hidden = !r;
+  if (r) $('bgPreview').src = r.url;
+}
+
+document.querySelectorAll('.presets button').forEach(b => b.onclick = () => { $('mCols').value = b.dataset.c; $('mRows').value = b.dataset.r; });
+$('btnPickBg').onclick = () => { bgTarget = 'menu'; $('fileBg').click(); };
+$('btnClearBg').onclick = () => setPendingBg(null);
+$('btnMatchRows').onclick = () => {
+  if (!pendingBg) return;
+  const cols = clampInt($('mCols').value, 4, 100, 20);
+  $('mRows').value = clampInt(Math.round(((pendingBg.h / pendingBg.w) * SQRT3 * (cols + 0.5) - 0.5) / 1.5), 4, 100, 15);
+};
+$('btnCreate').onclick = () => {
+  if (savedMap && !confirm(`Creating a new map replaces your autosaved map "${savedMap.name}".\n\nTip: use "Save to file" first if you want to keep it.\n\nContinue?`)) return;
+  startEditor({
+    version: 1, name: $('mName').value.trim() || 'New Battlefield',
+    cols: clampInt($('mCols').value, 4, 100, 20), rows: clampInt($('mRows').value, 4, 100, 15),
+    bg: pendingBg ? pendingBg.url : null, bgOpacity: 1, showGrid: true, gridOpacity: 0.45,
+    cells: {}, objects: [], nextId: 1,
+  });
+};
+$('btnContinue').onclick = () => { if (savedMap) startEditor(normalizeMap(savedMap)); };
+$('btnLoadFile').onclick = () => $('fileMap').click();
+$('fileMap').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const map = normalizeMap(JSON.parse(await f.text()));
+    if (savedMap && !confirm(`Opening this file replaces your autosaved map "${savedMap.name}". Continue?`)) return;
+    startEditor(map);
+  } catch (err) { alert('Could not open map: ' + err.message); }
+};
+$('fileBg').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const r = await readImageFile(f);
+    if (bgTarget === 'menu') setPendingBg(r, f.name);
+    else { S.bg = r.url; loadBgImage(); scheduleSave(); toast('Background updated'); }
+  } catch (err) { alert(err.message); }
+};
+
+/* =========================================================================
+   EDITOR UI WIRING
+   ========================================================================= */
+(function buildTemplateList() {
+  const list = $('tplList'), cats = {};
+  for (const [id, T] of Object.entries(TEMPLATES)) (cats[T.cat] = cats[T.cat] || []).push(id);
+  for (const [cat, ids] of Object.entries(cats)) {
+    const h = document.createElement('div'); h.className = 'tplcat'; h.textContent = cat; list.appendChild(h);
+    const grid = document.createElement('div'); grid.className = 'tplgrid'; list.appendChild(grid);
+    ids.forEach(id => {
+      const T = TEMPLATES[id], b = document.createElement('button');
+      b.className = 'btn tpl'; b.dataset.tpl = id;
+      b.title = `${T.name} — ${T.fp.length} hex${T.fp.length > 1 ? 'es' : ''}` + (T.cover ? `, ${COVER[T.cover].label.toLowerCase()}` : '');
+      const c = document.createElement('canvas'); c.width = 124; c.height = 108;
+      b.appendChild(c); b.appendChild(document.createTextNode(T.name));
+      b.onclick = () => selectTemplate(id);
+      grid.appendChild(b); drawPreview(c, id);
+    });
+  }
+})();
+function drawPreview(canvas, type) {
+  const x = canvas.getContext('2d'), T = TEMPLATES[type], s = HEX;
+  const cells = T.fp.map(([q, r]) => ({ q, r, x: s*SQRT3*(q + r/2), y: s*1.5*r }));
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  cells.forEach(c => { x0 = Math.min(x0, c.x - s*0.88); x1 = Math.max(x1, c.x + s*0.88); y0 = Math.min(y0, c.y - s); y1 = Math.max(y1, c.y + s); });
+  const pad = 8, k = Math.min((canvas.width - pad*2) / (x1 - x0), (canvas.height - pad*2) / (y1 - y0));
+  x.setTransform(k, 0, 0, k, canvas.width/2 - (x0 + x1)/2*k, canvas.height/2 - (y0 + y1)/2*k);
+  x.beginPath(); cells.forEach(c => hexSub(x, c.x, c.y, s)); x.fillStyle = '#212834'; x.fill();
+  x.strokeStyle = 'rgba(200,220,245,0.25)'; x.lineWidth = 2/k; x.stroke();
+  x.save(); T.draw(x, cells, s, { id: 3, rot: 0, type }); x.restore();
+}
+
+document.querySelectorAll('.tool').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+document.querySelectorAll('#brushSeg button').forEach(b => b.onclick = () => setBrush(+b.dataset.b));
+$('rotL').onclick = () => rotate(-1);
+$('rotR').onclick = () => rotate(1);
+$('autoCover').onchange = e => { ui.autoCover = e.target.checked; };
+$('showGrid').onchange = e => { S.showGrid = e.target.checked; requestRender(); scheduleSave(); };
+$('gridOp').oninput = e => { S.gridOpacity = +e.target.value; requestRender(); scheduleSave(); };
+$('bgOp').oninput = e => { S.bgOpacity = +e.target.value; requestRender(); scheduleSave(); };
+$('btnBg').onclick = () => { bgTarget = 'editor'; $('fileBg').click(); };
+$('btnBgRemove').onclick = () => { if (S.bg && confirm('Remove the background image?')) { S.bg = null; loadBgImage(); scheduleSave(); } };
+$('eName').oninput = e => { S.name = e.target.value; scheduleSave(); };
+$('btnUndo').onclick = undo;
+$('btnRedo').onclick = redo;
+$('btnFit').onclick = fitView;
+$('btnExport').onclick = exportPNG;
+$('btnSaveFile').onclick = saveToFile;
+$('btnMenu').onclick = async () => { await saveNow(); S = null; bgImg = null; showMenu(); };
+$('btnClear').onclick = () => {
+  if (!confirm('Remove all cover and templates from this map? (You can undo this.)')) return;
+  pushUndo(); S.cells = {}; S.objects = []; changed();
+};
+$('btnResize').onclick = () => {
+  const c = clampInt($('eCols').value, 4, 100, S.cols), r = clampInt($('eRows').value, 4, 100, S.rows);
+  $('eCols').value = c; $('eRows').value = r;
+  if (c === S.cols && r === S.rows) return;
+  const old = { cols: S.cols, rows: S.rows }; S.cols = c; S.rows = r;
+  const keepCells = Object.keys(S.cells).filter(k => { const [cc, rr2] = k.split(',').map(Number); return cc < c && rr2 < r; });
+  const keepObjs = S.objects.filter(o => footprint(o.type, o.q, o.r, o.rot).every(x => inB(x.q, x.r)));
+  const lost = Object.keys(S.cells).length - keepCells.length + S.objects.length - keepObjs.length;
+  if (lost && !confirm(`Shrinking the map will remove ${lost} painted hex(es)/template(s) outside the new edge. Continue?`)) { Object.assign(S, old); return; }
+  const cells = {}; keepCells.forEach(k => cells[k] = S.cells[k]);
+  S.cells = cells; S.objects = keepObjs; undoStack = []; redoStack = []; updateUndoBtns();
+  fitView(); changed();
+};
+
+/* =========================================================================
+   BOOT
+   ========================================================================= */
+store.init().then(showMenu);
+</script>
+</body>
+</html>
