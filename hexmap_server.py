@@ -100,8 +100,8 @@ def links():
 SIDES = {"pc", "ally", "hostile", "neutral"}
 PLAYER_SIDES = {"pc", "ally"}
 SIZES = (0.5, 1, 2, 3, 4)
-FIELDS = ("name", "side", "size", "q", "r", "rot", "img", "hidden", "art")
-PLAYER_FIELDS = {"name", "size", "q", "r", "rot", "img", "art"}   # what a player may change on a token they run
+FIELDS = ("name", "side", "size", "q", "r", "rot", "floor", "img", "hidden", "art")
+PLAYER_FIELDS = {"name", "size", "q", "r", "rot", "floor", "img", "art"}   # what a player may change on a token they run
 ART_RE = re.compile(r"^[Tt]okens/[^/]+$")
 
 changed = threading.Condition()        # guards everything below; notified on every change
@@ -116,6 +116,8 @@ def load_state():
     try:
         saved = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         state["battle"] = saved.get("battle")
+        for t in (state["battle"] or {}).get("tokens", []):
+            t.setdefault("floor", 0)    # saved before maps had floors
         state["players"] = {str(k): str(v) for k, v in (saved.get("players") or {}).items()}
     except (OSError, ValueError, AttributeError):
         pass
@@ -158,7 +160,7 @@ def is_num(v):
 def clean_token(raw, base=None):
     """A token from a browser, checked field by field; anything odd keeps the base value"""
     t = dict(base) if base else {"id": 0, "name": "Token", "side": "neutral", "size": 1, "q": 0, "r": 0,
-                                 "rot": 0, "img": None, "hidden": False, "art": None, "owner": None}
+                                 "rot": 0, "floor": 0, "img": None, "hidden": False, "art": None, "owner": None}
     if not isinstance(raw, dict):
         return t
     if isinstance(raw.get("name"), str):
@@ -172,6 +174,8 @@ def clean_token(raw, base=None):
             t[k] = int(round(raw[k]))
     if is_num(raw.get("rot")):
         t["rot"] = int(round(raw["rot"])) % 6
+    if is_num(raw.get("floor")):
+        t["floor"] = max(0, min(9, int(round(raw["floor"]))))
     if "img" in raw and (raw["img"] is None or (isinstance(raw["img"], str) and raw["img"].startswith("data:image/"))):
         t["img"] = raw["img"]
     if isinstance(raw.get("hidden"), bool):

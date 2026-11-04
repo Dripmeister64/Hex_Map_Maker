@@ -649,6 +649,114 @@ function lineEdges(pts, closed) {
 }
 // The climbs that belong to a building or a line (climbs drawn by hand belong to neither)
 function ownedClimbs() { return new Set(S.objects.concat(S.lines).flatMap(x => x.climbs || [])); }
+// Floors. Every hex is on the main floor (0) unless S.floors (map key -> sorted list of floors) says otherwise: a raised
+// shape is only on its own floor, and a bridge is on both, so one token can walk under another. Cover, zones, effects and
+// climbs belong to the hex, on every floor. Which floor a screen is looking at is that screen's own choice.
+const MAX_FLOOR = 9;
+let focusFloor = 0, floorBarExtra = 0;     // floorBarExtra: empty floors above the top one to offer in the floor bar
+const levelsOf = c => S.floors[keyOf(c.q, c.r)] || [0];
+const onFloor = (c, f) => levelsOf(c).includes(f);
+const nearestFloor = (c, f) => levelsOf(c).reduce((b, l) => Math.abs(l - f) < Math.abs(b - f) ? l : b);
+const floorName = f => f ? 'Floor ' + f : 'Main floor';
+const floorCol = f => f ? FLOOR_COLS[(f - 1) % FLOOR_COLS.length] : '170,180,192';
+const FLOOR_COLS = ['90,190,255', '190,130,255', '255,170,90', '120,220,150', '255,120,160'];
+// Stepping from hex a (on floor f) to its neighbour b: you stay on your floor if b has it, so walking under a bridge
+// doesn't take you onto it. Otherwise you go to b's nearest floor: one floor over an open border is a ramp; anything
+// else is climbed. Crossing a climb mark level along a bridge's deck doesn't count: the mark is for the ground below.
+function floorStep(a, f, b) {
+  const level = nearestFloor(b, f), marked = S.edges[edgeKey(a, b)] === 'climb', spans = levelsOf(a).length > 1 || levelsOf(b).length > 1;
+  if (level === f) return { level, climb: marked && !(f > 0 && spans) };
+  return { level, climb: marked || spans || Math.abs(level - f) >= 2 };
+}
+function setFloors(c, levels) {
+  const k = keyOf(c.q, c.r), list = [...new Set(levels)].sort((a, b) => a - b);
+  if (!list.length || (list.length === 1 && list[0] === 0)) delete S.floors[k]; else S.floors[k] = list;
+}
+// The list of floors to switch between, top floor first; hidden when the map only has its main floor
+function updateFloorBar() {
+  const bar = document.getElementById('floorBar');
+  const top = Math.min(MAX_FLOOR, Math.max(0, ...Object.values(S.floors).flat()) + floorBarExtra);
+  if (focusFloor > top) focusFloor = top;
+  bar.hidden = !top; bar.innerHTML = '';
+  for (let f = top; f >= 0; f--) {
+    const b = document.createElement('button'), dot = document.createElement('i');
+    b.className = 'btn small' + (f === focusFloor ? ' active' : ''); dot.style.setProperty('--c', floorCol(f));
+    b.append(dot, floorName(f)); b.onclick = () => setFocus(f); bar.appendChild(b);
+  }
+}
+function setFocus(f) { focusFloor = f; updateFloorBar(); requestRender(); }
+function stepFocus(by) {
+  const n = document.getElementById('floorBar').children.length - 1;
+  if (n > 0) setFocus(Math.max(0, Math.min(n, focusFloor + by)));
+}
+// Every hex border between two hexes on the map, as a graph of hex corners
+function borderGraph() {
+  const g = new Map(), id = p => Math.round(p[0]) + ',' + Math.round(p[1]);
+  const add = (from, to, key) => { let l = g.get(from); if (!l) g.set(from, l = []); l.push({ to, key, climb: S.edges[key] === 'climb' }); };
+  for (let row = 0; row < S.rows; row++) for (let col = 0; col < S.cols; col++) {
+    const a = offToAx(col, row), p = axToPx(a.q, a.r);
+    for (let i = 0; i < 3; i++) {
+      const b = { q: a.q + DIRS[i][0], r: a.r + DIRS[i][1] }; if (!inB(b.q, b.r)) continue;
+      const A = id(hexCorner(p.x, p.y, HEX, i)), B = id(hexCorner(p.x, p.y, HEX, i + 1)), key = edgeKey(a, b);
+      add(A, B, key); add(B, A, key);
+    }
+  }
+  return g;
+}
+// The open borders that count as closed when looking for a zone: from each loose end of a chain of climbs, the
+// shortest way over at most `max` open borders to another loose end, another chain or the map's edge. A gap has to
+// be shorter than the chain it closes, so a short stray climb doesn't fence off the hex next to it.
+function rampGaps(max) {
+  const gaps = new Set(); if (!max) return gaps;
+  const g = borderGraph(), chain = new Map(), lengths = [];
+  for (const start of g.keys()) {
+    if (chain.has(start) || !g.get(start).some(e => e.climb)) continue;
+    const id = lengths.length, todo = [start]; let ends = 0;
+    chain.set(start, id);
+    while (todo.length) for (const e of g.get(todo.pop())) if (e.climb) {
+      ends++; if (!chain.has(e.to)) { chain.set(e.to, id); todo.push(e.to); }
+    }
+    lengths.push(ends / 2);
+  }
+  const loose = [...chain.keys()].filter(c => g.get(c).length === 3 && g.get(c).filter(e => e.climb).length === 1);
+  const isLoose = new Set(loose), done = new Set();
+  for (const E of loose) {
+    if (done.has(E)) continue;
+    const id = chain.get(E), prev = new Map([[E, null]]);
+    let level = [E], hit = null;
+    for (let depth = 1; depth <= max && depth < lengths[id] && level.length && !hit; depth++) {
+      const next = [];
+      for (const c of level) { for (const e of g.get(c)) {
+        if (e.climb || prev.has(e.to)) continue;
+        prev.set(e.to, { from: c, key: e.key });
+        const on = chain.get(e.to);
+        if (g.get(e.to).length < 3 || (on !== undefined && on !== id) || isLoose.has(e.to)) { hit = e.to; break; }
+        if (on === undefined) next.push(e.to);   // a route doesn't run along its own chain
+      } if (hit) break; }
+      level = next;
+    }
+    if (hit) { done.add(hit); for (let s = prev.get(hit); s; s = prev.get(s.from)) gaps.add(s.key); }
+  }
+  return gaps;
+}
+// The zone around a hex on one floor, bounded by climbs, hexes not on that floor, gaps up to `maxGap` borders and the map's edge.
+// `open` lists the gaps on its outline (the ramps); `leaks` means it spilled out over most of the map.
+function floorZone(start, level, maxGap) {
+  const gaps = rampGaps(maxGap), seen = new Map([[keyOf(start.q, start.r), start]]), todo = [start];
+  while (todo.length) {
+    const c = todo.pop();
+    for (const [dq, dr] of DIRS) {
+      const n = { q: c.q + dq, r: c.r + dr }, k = keyOf(n.q, n.r), e = edgeKey(c, n);
+      if (seen.has(k) || !inB(n.q, n.r) || S.edges[e] === 'climb' || gaps.has(e) || !onFloor(n, level)) continue;
+      seen.set(k, n); todo.push(n);
+    }
+  }
+  return {
+    cells: [...seen.values()].map(c => { const p = axToPx(c.q, c.r); return { q: c.q, r: c.r, x: p.x, y: p.y }; }),
+    open: [...gaps].filter(e => e.split('|').filter(k => seen.has(k)).length === 1),
+    leaks: seen.size * 2 > S.cols * S.rows,
+  };
+}
 // Map keys of every hex that is part of a building's roof
 function roofHexes() {
   const out = new Set();
@@ -679,6 +787,7 @@ function drawMapLayers(ctx, lw) {
     ctx.strokeStyle = COVER[type].ring; ctx.lineWidth = HEX*0.05; ctx.stroke(ring);
   }
 
+  drawFloorTint(ctx);
   drawDifficult(ctx);
   drawDangerous(ctx);
   drawZones(ctx);
@@ -694,6 +803,7 @@ function drawMapLayers(ctx, lw) {
     ctx.save(); T.draw(ctx, footprint(o.type, o.q, o.r, o.rot), HEX, o); ctx.restore();
   }
   for (const k in S.edges) { const e = edgeEnds(k); if (e) drawClimb(ctx, e[0], e[1]); }
+  drawFloorMarks(ctx);
 
   ctx.strokeStyle = 'rgba(255,107,61,0.5)'; ctx.lineWidth = lw * 1.5; ctx.strokeRect(0, 0, W, H);
 }
@@ -736,6 +846,71 @@ function drawDangerous(ctx) {
   ctx.fillStyle = `rgba(${col},0.28)`; ctx.fill(tri);
   ctx.strokeStyle = `rgba(${col},0.85)`; ctx.lineWidth = HEX*0.05; ctx.stroke(tri);
   ctx.lineWidth = HEX*0.07; ctx.stroke(bang);
+  ctx.restore();
+}
+// Every floor but the one in focus is tinted in its own colour and gets a name tag; a hex that is also on the floor in
+// focus (a bridge) gets a lighter tint
+function otherFloorCells() {
+  const out = [], add = (a, level) => { const p = axToPx(a.q, a.r); out.push({ q: a.q, r: a.r, x: p.x, y: p.y, level }); };
+  for (const k in S.floors) {
+    const [c, r] = k.split(',').map(Number), a = offToAx(c, r);
+    for (const level of S.floors[k]) if (level && level !== focusFloor) add(a, level);
+  }
+  if (focusFloor) for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) { const a = offToAx(c, r); if (onFloor(a, 0)) add(a, 0); }
+  return out;
+}
+function drawFloorTint(ctx) {
+  for (const c of otherFloorCells()) {
+    ctx.beginPath(); hexSub(ctx, c.x, c.y, HEX);
+    ctx.fillStyle = `rgba(${floorCol(c.level)},${onFloor(c, focusFloor) ? 0.1 : 0.2})`; ctx.fill();
+  }
+}
+// Ramps and steep drops along the raised floors' outlines, and the name tags
+function drawFloorMarks(ctx) {
+  for (const k in S.floors) {
+    const [col, row] = k.split(',').map(Number), a = offToAx(col, row), p = axToPx(a.q, a.r);
+    for (const level of S.floors[k]) {
+      if (!level || S.floors[k].includes(level - 1)) continue;   // the side of a bridge is no ramp
+      DIRS.forEach(([dq, dr], i) => {
+        const n = { q: a.q + dq, r: a.r + dr }; if (!inB(n.q, n.r) || onFloor(n, level) || S.edges[edgeKey(a, n)] === 'climb') return;
+        const drop = level - nearestFloor(n, level); if (drop <= 0) return;
+        const A = hexCorner(p.x, p.y, HEX, i), B = hexCorner(p.x, p.y, HEX, i + 1);
+        if (drop >= 2) drawClimb(ctx, A, B); else drawRamp(ctx, A, B, p);
+      });
+    }
+  }
+  const cells = otherFloorCells(), byKey = new Map(cells.map(c => [c.level + '/' + c.q + ',' + c.r, c])), seen = new Set();
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `600 ${HEX*0.3}px "Segoe UI",system-ui,sans-serif`;
+  for (const c of cells) {
+    const key = c.level + '/' + c.q + ',' + c.r; if (seen.has(key)) continue;
+    const area = [c], todo = [c]; seen.add(key);
+    while (todo.length) {
+      const a = todo.pop();
+      for (const [dq, dr] of DIRS) {
+        const k = c.level + '/' + (a.q + dq) + ',' + (a.r + dr), n = byKey.get(k);
+        if (n && !seen.has(k)) { seen.add(k); area.push(n); todo.push(n); }
+      }
+    }
+    const m = centroid(area), at = area.reduce((b, x) => Math.hypot(x.x - m.x, x.y - m.y) < Math.hypot(b.x - m.x, b.y - m.y) ? x : b);
+    const text = floorName(c.level), w = ctx.measureText(text).width + HEX*0.24, h = HEX*0.42;
+    rr(ctx, at.x - w/2, at.y - h/2, w, h, h/2); ctx.fillStyle = 'rgba(12,16,22,0.82)'; ctx.fill();
+    ctx.strokeStyle = `rgb(${floorCol(c.level)})`; ctx.lineWidth = HEX*0.03; ctx.stroke();
+    ctx.fillStyle = '#eef3f8'; ctx.fillText(text, at.x, at.y + HEX*0.01);
+  }
+  ctx.restore();
+}
+// A ramp: two chevrons across the border, pointing uphill to `up`
+function drawRamp(ctx, A, B, up) {
+  const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, d = Math.hypot(up.x - mx, up.y - my) || 1;
+  const ux = (up.x - mx) / d * HEX, uy = (up.y - my) / d * HEX, sx = (B[0] - A[0]) * 0.3, sy = (B[1] - A[1]) * 0.3;
+  const p = new Path2D();
+  for (const t of [-0.1, 0.16]) {
+    const x = mx + ux*t, y = my + uy*t;
+    p.moveTo(x - sx - ux*0.14, y - sy - uy*0.14); p.lineTo(x, y); p.lineTo(x + sx - ux*0.14, y + sy - uy*0.14);
+  }
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = HEX*0.12; ctx.stroke(p);
+  ctx.strokeStyle = 'rgb(120,220,190)'; ctx.lineWidth = HEX*0.06; ctx.stroke(p);
   ctx.restore();
 }
 // A climb: a muted, see-through line along the border with ladder rungs across it
@@ -868,6 +1043,8 @@ function normalizeMap(d) {
     edges: d.edges && typeof d.edges === 'object' ? Object.fromEntries(Object.entries(d.edges).filter(([k, v]) => v === 'climb' && k.includes('|'))) : {},
     objects: Array.isArray(d.objects) ? d.objects.filter(o => o && TEMPLATES[o.type]) : [],
     lines: Array.isArray(d.lines) ? d.lines.filter(okLine) : [],
+    floors: d.floors && typeof d.floors === 'object' ? Object.fromEntries(Object.entries(d.floors)
+      .filter(([, v]) => Array.isArray(v) && v.length && v.some(Boolean) && v.every(l => Number.isInteger(l) && l >= 0 && l <= MAX_FLOOR))) : {},
     nextId: d.nextId || (Array.isArray(d.objects) ? d.objects.length + 1 : 1),
   };
 }

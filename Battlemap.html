@@ -140,6 +140,11 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
 #ownRow .primary kbd{color:#170d08;border-color:rgba(0,0,0,.35)}
 #ownSel{flex:1;background:#0f1319;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit;font-size:12px}
 #btnWho{max-width:190px;overflow:hidden;text-overflow:ellipsis}
+#floorBar{position:absolute;left:12px;top:12px;display:flex;flex-direction:column;gap:3px;background:rgba(21,26,33,.9);
+  border:1px solid var(--line);border-radius:8px;padding:6px}
+#floorBar button{display:flex;align-items:center;gap:6px;text-align:left}
+#floorBar button.active{border-color:var(--accent2);background:#18293a;box-shadow:inset 0 0 0 1px var(--accent2)}
+#floorBar i{width:9px;height:9px;border-radius:50%;background:rgb(var(--c));flex:none}
 #linksBox{margin-top:10px;background:#111820;border:1px solid var(--line);border-radius:6px;padding:6px 9px}
 #linksBox summary{cursor:pointer;font-size:12.5px;font-weight:600}
 #linksBox[open] summary{margin-bottom:4px}
@@ -296,7 +301,7 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
     </section>
   </aside>
 
-  <main id="stage"><canvas id="cv"></canvas><div id="feed" hidden><h3>Recent</h3><ol id="log"></ol></div><div id="info" hidden></div><div id="toast"></div></main>
+  <main id="stage"><canvas id="cv"></canvas><div id="floorBar" hidden></div><div id="feed" hidden><h3>Recent</h3><ol id="log"></ol></div><div id="info" hidden></div><div id="toast"></div></main>
 
   <footer id="status">
     <span id="stHex">Hex —</span>
@@ -418,6 +423,7 @@ function tokenCells(t) {
   return TOKEN_FP[t.size].map(([dq, dr]) => { const [a, b] = rotAx(dq, dr, t.rot); return cellAt(t.q + a, t.r + b); });
 }
 const tokenById = id => B.tokens.find(t => t.id === id) || null;
+const tokenFloor = t => nearestFloor(t, t.floor || 0);   // the floor it stands on, even if the map changed under it
 // Player view: the table screen moves and edits every player and ally token; a player who joined by name only
 // the ones they have claimed (allies they deploy are theirs straight away). Only allies can be deployed or
 // removed. Everything else needs GM mode, and hidden tokens don't exist for players at all.
@@ -429,12 +435,15 @@ const canRemove = t => ui.gm || (t.side === 'ally' && canMove(t));
 const whyLocked = t => !playerSide(t) ? `${t.name} is run by the GM`
   : t.owner ? `${t.name} is played by ${t.owner}` : net.role === 'player' ? `Press C to claim ${t.name}, then move it` : `Join as a player, then press C to claim ${t.name}`;
 const shown = () => B.tokens.filter(seen);
-function tokenAt(h) {
+function tokenAt(h) {   // the floor in focus goes first, so you can pick a token on a bridge or the one under it
+  let other = null;
   for (let i = B.tokens.length - 1; i >= 0; i--) {
     const t = B.tokens[i];
-    if (seen(t) && tokenCells(t).some(c => c.q === h.q && c.r === h.r)) return t;
+    if (!seen(t) || !tokenCells(t).some(c => c.q === h.q && c.r === h.r)) continue;
+    if (tokenFloor(t) === focusFloor) return t;
+    other = other || t;
   }
-  return null;
+  return other;
 }
 const fits = cells => cells.every(c => inB(c.q, c.r));
 
@@ -509,12 +518,13 @@ function burstArea(F, X) {
 }
 
 // Movement (Lancer): a step costs 1, or 2 if any hex the token steps into is difficult terrain or any part of
-// it crosses a climb (they don't stack). Dangerous terrain costs nothing extra, but routes avoid it if they can.
-function stepInfo(cells, dq, dr) {
+// it crosses a climb (they don't stack). Floors: see floorStep. Dangerous terrain costs nothing extra, but routes
+// avoid it if they can. f is the floor the token is on.
+function stepInfo(cells, dq, dr, f) {
   const own = new Set(cells.map(hkey)), to = cells.map(c => ({ q: c.q + dq, r: c.r + dr }));
   const entered = to.filter(c => !own.has(hkey(c))), fx = c => S.effects[keyOf(c.q, c.r)];
   const difficult = entered.some(c => fx(c) === 'difficult'), dangerous = entered.some(c => fx(c) === 'dangerous');
-  const climb = cells.some((c, i) => S.edges[edgeKey(c, to[i])] === 'climb');
+  const climb = cells.some((c, i) => floorStep(c, nearestFloor(c, f), to[i]).climb);
   return { cost: difficult || climb ? 2 : 1, difficult, climb, dangerous };
 }
 // Other characters: anyone who isn't an ally blocks the way if they are the mover's Size or larger, and moving
@@ -522,78 +532,88 @@ function stepInfo(cells, dq, dr) {
 // Only characters the viewer can see count, so hidden tokens give nothing away.
 const team = t => t.side === 'pc' || t.side === 'ally' ? 'friendly' : t.side;
 const hostileTo = (a, b) => (team(a) === 'friendly' && b.side === 'hostile') || (a.side === 'hostile' && team(b) === 'friendly');
-const othersSig = t => t.id == null ? '' : shown().filter(o => o.id !== t.id).map(o => [o.id, o.q, o.r, o.size, o.rot, o.side]).join(';');
+const othersSig = t => t.id == null ? '' : shown().filter(o => o.id !== t.id).map(o => [o.id, o.q, o.r, o.size, o.rot, o.side, o.floor]).join(';');
 let pathMemo = { key: null, val: null };
 function moveRules(t, from, to) {
   const fp = TOKEN_FP[t.size].map(([dq, dr]) => rotAx(dq, dr, t.rot));
   const cellsAt = (q, r) => fp.map(([a, b]) => ({ q: q + a, r: r + b }));
-  const start = cellsAt(from.q, from.r), end = cellsAt(to.q, to.r);
+  const start = cellsAt(from.q, from.r), end = cellsAt(to.q, to.r), startFloor = nearestFloor(from, from.floor || 0), at = (k, f) => k + '@' + f;
   // the start and end positions are always allowed (e.g. standing on a roof); the warnings explain the rest
   const own = new Set([...start, ...end].map(hkey));
   const others = t.id == null ? [] : shown().filter(o => o.id !== t.id);
   const blockers = new Set(), zone = new Map();
   for (const o of others) {
     const oc = tokenCells(o);
-    if (team(o) !== team(t) && o.size >= t.size) oc.forEach(c => blockers.add(hkey(c)));
-    if (hostileTo(t, o) && o.size >= t.size && setDist(start, oc).d > 1)
-      for (const c of oc) for (const [dq, dr] of DIRS) { const k = (c.q + dq) + ',' + (c.r + dr); if (!zone.has(k)) zone.set(k, o); }
+    const oFloor = tokenFloor(o);   // only characters on the same floor get in the way
+    if (team(o) !== team(t) && o.size >= t.size) oc.forEach(c => blockers.add(at(hkey(c), oFloor)));
+    if (hostileTo(t, o) && o.size >= t.size && (oFloor !== startFloor || setDist(start, oc).d > 1))
+      for (const c of oc) for (const [dq, dr] of DIRS) { const k = at((c.q + dq) + ',' + (c.r + dr), oFloor); if (!zone.has(k)) zone.set(k, o); }
   }
   // building roofs are hard cover but can be walked on; getting up there costs a climb at the wall
   const openMemo = new Map(), roofs = roofHexes();
-  const open = (q, r) => {
-    const k = q + ',' + r; let v = openMemo.get(k);
+  const open = (q, r, f) => {
+    const k = at(q + ',' + r, f); let v = openMemo.get(k);
     if (v === undefined) openMemo.set(k, v = cellsAt(q, r).every(c => {
-      const ck = hkey(c), mk = keyOf(c.q, c.r);
-      return inB(c.q, c.r) && (own.has(ck) || ((!ui.hardBlocks || S.cells[mk] !== 'hard' || roofs.has(mk)) && !blockers.has(ck)));
+      const ck = hkey(c), mk = keyOf(c.q, c.r), overIt = f > 0 && levelsOf(c).length > 1;   // a bridge passes over hard cover
+      return inB(c.q, c.r) && (own.has(ck) || ((!ui.hardBlocks || S.cells[mk] !== 'hard' || roofs.has(mk) || overIt) && !blockers.has(at(ck, f))));
     }));
     return v;
   };
-  const engagedBy = (q, r) => { for (const c of cellsAt(q, r)) { const o = zone.get(hkey(c)); if (o) return o; } return null; };
+  const engagedBy = (q, r, f) => { for (const c of cellsAt(q, r)) { const o = zone.get(at(hkey(c), f)); if (o) return o; } return null; };
   // the route as a list of token positions, with what each step cost and anything the table should know
   const result = path => {
-    const steps = path.slice(1).map((n, i) => ({ ...stepInfo(cellsAt(path[i].q, path[i].r), n.q - path[i].q, n.r - path[i].r), q: n.q, r: n.r }));
+    const steps = path.slice(1).map((n, i) => ({ ...stepInfo(cellsAt(path[i].q, path[i].r), n.q - path[i].q, n.r - path[i].r, path[i].f), q: n.q, r: n.r }));
     const cost = steps.reduce((a, st) => a + st.cost, 0), last = path[path.length - 1], endSet = new Set(cellsAt(last.q, last.r).map(hkey));
     return {
-      cost, hexes: steps.length, extra: cost - steps.length, path, steps, fp,
+      cost, hexes: steps.length, extra: cost - steps.length, path, steps, fp, floor: last.f,
       danger: steps.filter(st => st.dangerous).length,
-      engagedBy: steps.length ? engagedBy(last.q, last.r) : null,
-      occupied: steps.length ? shown().filter(o => o.id !== t.id && tokenCells(o).some(c => endSet.has(hkey(c)))) : [],
-      overwatch: steps.length ? others.filter(o => hostileTo(t, o) && setDist(start, tokenCells(o)).d === 1) : [],
+      engagedBy: steps.length ? engagedBy(last.q, last.r, last.f) : null,
+      occupied: steps.length ? shown().filter(o => o.id !== t.id && tokenFloor(o) === last.f && tokenCells(o).some(c => endSet.has(hkey(c)))) : [],
+      overwatch: steps.length ? others.filter(o => hostileTo(t, o) && tokenFloor(o) === startFloor && setDist(start, tokenCells(o)).d === 1) : [],
     };
   };
-  return { cellsAt, open, engagedBy, result };
+  return { cellsAt, open, engagedBy, result, startFloor };
 }
+// `to.floor` says which of the end hex's floors to end on. Without it: the floor in focus, if that's above the main
+// floor and the hex has it; otherwise whichever floor is cheapest to reach.
 function movePath(t, from, to) {
-  const key = [t.id, t.size, t.rot, from.q, from.r, to.q, to.r, ui.hardBlocks, othersSig(t)].join();
+  const want = to.floor != null ? nearestFloor(to, to.floor) : focusFloor > 0 && onFloor(to, focusFloor) ? focusFloor : null;
+  const key = [t.id, t.size, t.rot, from.q, from.r, from.floor, to.q, to.r, want, ui.hardBlocks, othersSig(t)].join();
   if (pathMemo.key === key) return pathMemo.val;
-  const { cellsAt, open, engagedBy, result } = moveRules(t, from, to);
+  const { cellsAt, open, engagedBy, result, startFloor } = moveRules(t, from, to);
   // weights are 512 × movement cost, +1 per step into dangerous terrain: the cheapest route first, then the safest
-  let val = null;
-  const dist = new Map([[hkey(from), 0]]), prev = new Map(), buckets = [[from]];
+  let val = null, found = null;
+  const fk = p => hkey(p) + '@' + p.f, begin = { q: from.q, r: from.r, f: startFloor };
+  const dist = new Map([[fk(begin), 0]]), prev = new Map(), buckets = [[begin]];
   search: for (let d = 0; d < buckets.length; d++) for (const p of buckets[d] || []) {
-    if (dist.get(hkey(p)) !== d) continue;
+    if (dist.get(fk(p)) !== d) continue;
     if (p.q === to.q && p.r === to.r) {
-      const path = [p]; for (let k = hkey(p); prev.has(k); k = hkey(path[0])) path.unshift(prev.get(k));
-      val = result(path);
-      break search;
+      if (want == null || p.f === want) { found = p; break search; }
+      found = found || p;                              // in case the floor it should end on can't be reached
     }
-    if (p !== from && engagedBy(p.q, p.r)) continue;   // engagement stops movement here
+    if (p !== begin && engagedBy(p.q, p.r, p.f)) continue;   // engagement stops movement here
     const cells = cellsAt(p.q, p.r);
     for (const [dq, dr] of DIRS) {
-      const n = { q: p.q + dq, r: p.r + dr }, nk = hkey(n);
-      if (!open(n.q, n.r)) continue;
-      const st = stepInfo(cells, dq, dr), nd = d + st.cost*512 + (st.dangerous ? 1 : 0);
+      const n = { q: p.q + dq, r: p.r + dr }; n.f = floorStep(p, p.f, n).level;
+      const nk = fk(n);
+      if (!open(n.q, n.r, n.f)) continue;
+      const st = stepInfo(cells, dq, dr, p.f), nd = d + st.cost*512 + (st.dangerous ? 1 : 0);
       if (dist.has(nk) && dist.get(nk) <= nd) continue;
       dist.set(nk, nd); prev.set(nk, p); (buckets[nd] = buckets[nd] || []).push(n);
     }
+  }
+  if (found) {
+    const path = [found]; for (let k = fk(found); prev.has(k); k = fk(path[0])) path.unshift(prev.get(k));
+    val = result(path);
   }
   pathMemo = { key, val };
   return val;
 }
 // Moving along the measured straight line instead; null if something blocks it or engagement stops it early
 function straightPath(t, from, to) {
-  const { open, engagedBy, result } = moveRules(t, from, to), path = hexLine(from, to);
-  const ok = path.slice(1).every((p, i) => open(p.q, p.r) && (i === path.length - 2 || !engagedBy(p.q, p.r)));
+  const { open, engagedBy, result, startFloor } = moveRules(t, from, to), path = hexLine(from, to).map(p => ({ ...p }));
+  path.forEach((p, i) => { p.f = i ? floorStep(path[i - 1], path[i - 1].f, p).level : startFloor; });
+  const ok = path.slice(1).every((p, i) => open(p.q, p.r, p.f) && (i === path.length - 2 || !engagedBy(p.q, p.r, p.f)));
   return ok ? result(path) : null;
 }
 const moveText = m => m ? `Move ${m.cost}` + (m.extra ? ` (${m.hexes} + ${m.extra} extra)` : '') : 'No clear path';
@@ -636,7 +656,7 @@ function coverBetween(A, T) {
 const coverText = c => c.kind === 'hard' ? 'hard cover (+2 Difficulty)' : c.kind === 'soft' ? 'soft cover (+1 Difficulty)'
   : c.flanked ? 'no cover (flanked)' : 'no cover';
 // Characters next to a hostile are engaged: +1 Difficulty on their ranged attacks
-const engagedWith = t => t && t.id != null ? shown().filter(o => hostileTo(t, o) && setDist(tokenCells(t), tokenCells(o)).d === 1) : [];
+const engagedWith = t => t && t.id != null ? shown().filter(o => hostileTo(t, o) && tokenFloor(o) === tokenFloor(t) && setDist(tokenCells(t), tokenCells(o)).d === 1) : [];
 
 function drawMovePath(ctx, m, col, marksOnly) {
   if (!m || m.path.length < 2) return;
@@ -681,7 +701,7 @@ function computeRuler() {
   const cover = { light: 0, hard: 0 };
   path.forEach(c => { if (skip.has(hkey(c))) return; const v = S.cells[keyOf(c.q, c.r)]; if (v) cover[v]++; });
   // movement: the token (or a Size 1 mover) shifted so the hex the ruler started on lands on its end
-  const t = R.from.token != null ? tokenById(R.from.token) : { size: 1, rot: 0, q: R.startHex.q, r: R.startHex.r };
+  const t = R.from.token != null ? tokenById(R.from.token) : { size: 1, rot: 0, q: R.startHex.q, r: R.startHex.r, floor: focusFloor };
   const end = { q: t.q + R.toHex.q - R.startHex.q, r: t.r + R.toHex.r - R.startHex.r };
   // measuring to another character is about range, not moving into their space
   const toOther = R.to.token != null && R.to.token !== R.from.token;
@@ -733,7 +753,8 @@ function drawArt(ctx, im, cells) {
 function drawToken(ctx, t, lw, hit) {
   const cells = tokenCells(t), col = SIDES[t.side].col, m = centroid(cells), art = tokenImg(t.art);
   const R = art ? Math.max(...cells.map(c => Math.hypot(c.x - m.x, c.y - m.y))) + HEX*0.95 : DISC[t.size]*HEX;
-  ctx.save(); if (t.hidden) ctx.globalAlpha = 0.45;   // only the GM ever sees hidden tokens
+  const elsewhere = tokenFloor(t) !== focusFloor;
+  ctx.save(); if (t.hidden || elsewhere) ctx.globalAlpha = 0.45;   // only the GM ever sees hidden tokens
   if (art) {   // a glow in the side's colour behind the art's own frame
     footprintPath(ctx, cells, HEX); ctx.fillStyle = `rgba(${col},0.14)`; ctx.fill();
     strokeEdges(ctx, outerEdges(cells, HEX), HEX*0.26, `rgba(${col},0.7)`);
@@ -762,7 +783,7 @@ function drawToken(ctx, t, lw, hit) {
     circle(ctx, m.x, m.y, R + HEX*(hit ? 0.27 : 0.15)); ctx.setLineDash([HEX*0.18, HEX*0.12]);
     ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = Math.max(lw*2.5, HEX*0.05); ctx.stroke(); ctx.setLineDash([]);
   }
-  if (ui.showNames && t.name) pill(ctx, m.x, m.y + R + HEX*0.22, t.name + (t.owner ? ` · ${t.mine ? 'you' : t.owner}` : ''), HEX*0.26, `rgba(${col},0.9)`);
+  if (ui.showNames && t.name) pill(ctx, m.x, m.y + R + HEX*0.22, t.name + (t.owner ? ` · ${t.mine ? 'you' : t.owner}` : '') + (elsewhere ? ` · ${floorName(tokenFloor(t))}` : ''), HEX*0.26, `rgba(${col},0.9)`);
   ctx.restore();
   if (t.hidden) pill(ctx, m.x, m.y - R - HEX*0.18, 'HIDDEN', HEX*0.22, '#ff6b3d', 'rgba(40,16,8,0.9)');
 }
@@ -823,7 +844,7 @@ function render() {
   if (D) {   // where the dragged token started
     const t = tokenById(D.id), from = tokenCells({ ...t, q: D.from.q, r: D.from.r }), b = centroid(tokenCells(t));
     ctx.setLineDash([HEX*0.15, HEX*0.1]); strokeEdges(ctx, outerEdges(from, HEX), HEX*0.06, 'rgba(255,255,255,0.6)'); ctx.setLineDash([]);
-    const m = dragMove = movePath(t, D.from, t);
+    const m = dragMove = movePath(t, D.from, { q: t.q, r: t.r });
     drawMovePath(ctx, m, 'rgba(255,255,255,0.85)');
     labels.push({ x: b.x, y: b.y - DISC[t.size]*HEX, text: (m ? moveText(m) : `No clear path (${hd(D.from, t)} straight)`) + (moveWarnings(m).length ? ' ⚠' : ''),
                   col: m && (m.extra || moveWarnings(m).length) ? `rgb(${EFFECTS.difficult.col})` : '#ffffff' });
@@ -838,7 +859,8 @@ function render() {
   });
   if (ui.trails.length) requestRender();
   const hit = new Set(A ? A.hits.map(t => t.id) : []);
-  for (const t of shown()) drawToken(ctx, t, lw, hit.has(t.id));
+  const onTop = t => tokenFloor(t) === focusFloor ? 1 : 0;
+  for (const t of shown().sort((a, b) => onTop(a) - onTop(b))) drawToken(ctx, t, lw, hit.has(t.id));
   drawRuler(ctx, lw, M, labels);
   if (M && M.move) drawMovePath(ctx, M.move, `rgba(${EFFECTS.difficult.col},0.9)`, !M.detour);
 
@@ -954,7 +976,7 @@ function normalizeTokens(list) {
   return (Array.isArray(list) ? list : []).filter(t => t && Number.isFinite(t.q) && Number.isFinite(t.r)).map((t, i) => ({
     id: Number.isFinite(t.id) ? t.id : i + 1, name: String(t.name || 'Token').slice(0, 40),
     side: SIDES[t.side] ? t.side : 'neutral', size: SIZES.includes(t.size) ? t.size : 1,
-    q: Math.round(t.q), r: Math.round(t.r), rot: ((Math.round(t.rot) || 0) % 6 + 6) % 6,
+    q: Math.round(t.q), r: Math.round(t.r), rot: ((Math.round(t.rot) || 0) % 6 + 6) % 6, floor: Math.max(0, Math.min(MAX_FLOOR, Math.round(t.floor) || 0)),
     img: typeof t.img === 'string' ? t.img : null, hidden: !!t.hidden,
     art: typeof t.art === 'string' && /^[Tt]okens\/[^/]+$/.test(t.art) ? t.art : null,
     // who plays it: their name, whether it's this screen's player, and (for the GM) their id
@@ -966,7 +988,7 @@ const normalizeLog = list => (Array.isArray(list) ? list : []).filter(e => e && 
 // Show a map on this screen; the view is only refitted when the map's size changes
 function showMap(map) {
   const refit = !S || S.cols !== map.cols || S.rows !== map.rows, sameBg = S && S.bg === map.bg;
-  S = map; pathMemo = { key: null, val: null };
+  S = map; pathMemo = { key: null, val: null }; updateFloorBar();
   $('bName').textContent = S.name; $('showGrid').checked = S.showGrid; $('gridOp').value = S.gridOpacity;
   if (!sameBg) { bgImg = null; if (S.bg) { const img = new Image(); img.onload = () => { bgImg = img; requestRender(); }; img.src = S.bg; } }
   if (refit) requestAnimationFrame(fitView);
@@ -1004,9 +1026,9 @@ function addToken(side) {
   if (!ui.gm && side !== 'ally') return;
   if (net.role === 'guest') { openJoin(); return; }
   const n = B.tokens.filter(t => t.side === side).length + 1;
-  const t = { id: B.nextId, name: `${SIDES[side].label} ${n}`, side, size: ui.newSize, q: 0, r: 0, rot: 0, img: null, hidden: ui.gm && ui.newHidden };
+  const t = { id: B.nextId, name: `${SIDES[side].label} ${n}`, side, size: ui.newSize, q: 0, r: 0, rot: 0, floor: focusFloor, img: null, hidden: ui.gm && ui.newHidden };
   const h = freeSpotFor(t); if (!h) { toast('No free space for a token that size'); return; }
-  pushUndo(); t.q = h.q; t.r = h.r; B.nextId++; B.tokens.push(t); ui.sel = t.id;
+  pushUndo(); t.q = h.q; t.r = h.r; t.floor = nearestFloor(h, focusFloor); B.nextId++; B.tokens.push(t); ui.sel = t.id;
   logEvent(ui.gm ? `${t.name} placed${t.hidden ? ' (hidden)' : ''}` : `${t.name} deployed`, t.hidden); commit();
 }
 function selected() { return ui.sel != null ? tokenById(ui.sel) : null; }
@@ -1026,7 +1048,7 @@ function duplicateSelected() {
   const base = t.name.replace(/\s*\d+$/, '') || 'Token';
   const copy = { ...t, id: B.nextId, name: `${base} ${B.tokens.filter(x => x.name.startsWith(base)).length + 1}` };
   const h = freeSpotFor(copy); if (!h) { toast('No free space for a copy'); return; }
-  pushUndo(); copy.q = h.q; copy.r = h.r; B.nextId++; B.tokens.push(copy); ui.sel = copy.id;
+  pushUndo(); copy.q = h.q; copy.r = h.r; copy.floor = nearestFloor(h, focusFloor); B.nextId++; B.tokens.push(copy); ui.sel = copy.id;
   logEvent(`${copy.name} ${ui.gm ? 'placed' : 'deployed'}${copy.hidden ? ' (hidden)' : ''}`, copy.hidden); commit();
 }
 function setHidden(t, hidden) {
@@ -1205,7 +1227,7 @@ cv.addEventListener('pointerdown', e => {
       ui.sel = t.id; commitView(); toast(whyLocked(t)); startPan(e); return;
     }
     // keep the token under the same part of the cursor while dragging
-    ui.sel = t.id; ui.drag = { id: t.id, dq: h.q - t.q, dr: h.r - t.r, from: { q: t.q, r: t.r }, moved: false };
+    ui.sel = t.id; ui.drag = { id: t.id, dq: h.q - t.q, dr: h.r - t.r, from: { q: t.q, r: t.r, floor: tokenFloor(t) }, moved: false };
     B.tokens = B.tokens.filter(x => x !== t).concat(t);   // bring to front
     commitView(); updateCursor(); return;
   }
@@ -1224,6 +1246,7 @@ cv.addEventListener('pointermove', e => {
     if (S.cells[k]) bits.push(COVER[S.cells[k]].label);
     if (S.zones[k]) bits.push(ZONES[S.zones[k]].label);
     if (S.effects[k]) bits.push(EFFECTS[S.effects[k]].label);
+    if (S.floors[k]) bits.push(S.floors[k].map(floorName).join(' + '));
     $('stHex').textContent = bits.join(' · ');
   } else $('stHex').textContent = 'Hex —';
 
@@ -1242,7 +1265,8 @@ function endPointer() {
   if (ui.drag) {
     const D = ui.drag, t = tokenById(D.id); ui.drag = null;
     if (D.moved && t) {
-      const m = movePath(t, D.from, t), n = m ? m.hexes : hd(D.from, t);
+      const m = movePath(t, D.from, { q: t.q, r: t.r }), n = m ? m.hexes : hd(D.from, t);
+      t.floor = m ? m.floor : nearestFloor(t, focusFloor);
       logEvent(`${t.name} moved ${n} hex${n === 1 ? '' : 'es'}` + (m && m.extra ? ` (Move ${m.cost})` : '')
         + (m && m.engagedBy ? `, engaged by ${m.engagedBy.name}` : ''), t.hidden || (m && m.engagedBy && m.engagedBy.hidden));
       addTrail(t.id, m);
@@ -1294,6 +1318,8 @@ window.addEventListener('keydown', e => {
   else if (k === 'f') fitView();
   else if (k === 'h') { const t = selected(); if (t) setHidden(t, !t.hidden); }
   else if (k === 'c') claimKey();
+  else if (k === 'pageup') { e.preventDefault(); stepFocus(1); }
+  else if (k === 'pagedown') { e.preventDefault(); stepFocus(-1); }
   else if (k === 'escape') { if (ui.ruler || ui.area) clearMeasure(); else if (ui.sel != null) { ui.sel = null; commitView(); } }
 });
 window.addEventListener('keyup', e => { if (e.key === ' ') { if (!typing(e)) e.preventDefault(); ui.space = false; updateCursor(); } });
@@ -1535,7 +1561,7 @@ async function applyState(st) {
   if (before) for (const t of B.tokens) {
     const was = before.get(t.id) && JSON.parse(before.get(t.id));
     if (was && !active.has(t.id) && (was.q !== t.q || was.r !== t.r) && was.size === t.size && was.rot === t.rot)
-      addTrail(t.id, movePath(t, { q: was.q, r: was.r }, t));
+      addTrail(t.id, movePath(t, { q: was.q, r: was.r, floor: was.floor }, t));
   }
   if (undoBase) {   // other screens' changes are not part of this screen's undo step
     for (const t of B.tokens) if (!active.has(t.id)) undoBase.set(t.id, net.synced.get(t.id));

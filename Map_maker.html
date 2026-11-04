@@ -91,13 +91,19 @@ input[type=checkbox]{accent-color:var(--accent2)}
 #rotLabel{min-width:48px;text-align:center;font-family:Consolas,monospace}
 .btnrow{display:flex;gap:6px;margin-top:8px}.btnrow>*{flex:1}
 .hint{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.45}
-#shapeSeg button{min-width:0;padding-left:2px;padding-right:2px}
+#shapeSeg button,#gapSeg button{min-width:0;padding-left:2px;padding-right:2px}
+#floorBar{position:absolute;left:12px;top:12px;display:flex;flex-direction:column;gap:3px;background:rgba(21,26,33,.9);
+  border:1px solid var(--line);border-radius:8px;padding:6px}
+#floorBar button{display:flex;align-items:center;gap:6px;text-align:left}
+#floorBar button.active{border-color:var(--accent2);background:#18293a;box-shadow:inset 0 0 0 1px var(--accent2)}
+#floorBar i{width:9px;height:9px;border-radius:50%;background:rgb(var(--c));flex:none}
 #stage{grid-area:stage;position:relative;overflow:hidden;
   background:#0a0d11 repeating-linear-gradient(0deg,transparent 0 39px,#10151b 39px 40px),
              repeating-linear-gradient(90deg,transparent 0 39px,#10151b 39px 40px)}
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:crosshair;touch-action:none}
 #status{grid-area:status;display:flex;align-items:center;gap:18px;padding:0 12px;background:var(--panel);
   border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+#status>span{white-space:nowrap;flex:none}#status>#stCounts{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}#status>.grow{flex:1 1 0}
 #stSave.ok{color:#6fd18a}#stSave.bad{color:#ff6b6b}
 #toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);background:#1e2a36;border:1px solid #33506a;
   padding:8px 16px;border-radius:6px;font-size:13px;opacity:0;transition:opacity .25s;pointer-events:none}
@@ -187,6 +193,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
         <button class="btn tool" data-tool="climb" title="Click or drag along the border between two hexes. Crossing it costs double movement"><span class="climbic">╪</span>Climb (hex border)<kbd>8</kbd></button>
         <button class="btn tool" data-tool="dangerous" title="Entering it means an Engineering check or 5 damage; costs no extra movement"><span class="sw danger"></span>Dangerous terrain<kbd>9</kbd></button>
         <button class="btn tool" data-tool="line" title="Draw a cliff edge or wall: every hex border it runs through becomes a climb"><span class="climbic">⟋</span>Climb line (cliff, wall)<kbd>L</kbd></button>
+        <button class="btn tool" data-tool="floor" title="Click inside a shape made of climbs to raise it one floor; right-click to lower it"><span class="climbic">▤</span>Floors (raise a shape)<kbd>G</kbd></button>
       </div>
       <div id="lineOpts" hidden>
         <div class="seg" id="shapeSeg">
@@ -198,6 +205,21 @@ input[type=checkbox]{accent-color:var(--accent2)}
         </div>
         <label class="chk"><input type="checkbox" id="snapCorners"> Snap to hex corners <kbd>Shift</kbd></label>
         <div class="hint" id="lineHint"></div>
+      </div>
+      <div id="floorOpts" hidden>
+        <div class="seg" id="floorModeSeg">
+          <button class="btn small" data-m="raise">Raise shape</button>
+          <button class="btn small" data-m="bridge">Bridge</button>
+        </div>
+        <div class="seg" id="gapSeg">
+          <span>Open borders</span>
+          <button class="btn small" data-g="0">0</button>
+          <button class="btn small" data-g="2">2</button>
+          <button class="btn small" data-g="4">4</button>
+          <button class="btn small" data-g="6">6</button>
+          <button class="btn small" data-g="8">8</button>
+        </div>
+        <div class="hint" id="floorHint"></div>
       </div>
       <div class="seg" id="brushSeg">
         <span>Brush</span>
@@ -244,7 +266,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
     </section>
   </aside>
 
-  <main id="stage"><canvas id="cv"></canvas><div id="toast"></div></main>
+  <main id="stage"><canvas id="cv"></canvas><div id="floorBar" hidden></div><div id="toast"></div></main>
 
   <footer id="status">
     <span id="stHex">Hex —</span>
@@ -266,7 +288,7 @@ let bgImg = null;        // decoded background image
 const view = { scale: 1, ox: 0, oy: 0 };
 const ui = { tool:'light', brush:0, template:null, rot:0, autoCover:true, autoClimb:true, hover:null, hoverEdge:null,
              painting:false, paintMode:null, lastPaintKey:null, panning:false, last:null, space:false,
-             shape:'line', snapCorners:false, draft:null, cursor:null, hoverLine:-1 };
+             shape:'line', snapCorners:false, draft:null, cursor:null, hoverLine:-1, gaps:4, floorMode:'raise', floorPrev:null };
 let undoStack = [], redoStack = [];
 
 /* =========================================================================
@@ -292,6 +314,14 @@ function drawMap(ctx, opt) {
     ctx.save(); ctx.globalAlpha = has ? 1 : 0.6; drawClimb(ctx, A, B); ctx.restore();
     ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]);
     ctx.strokeStyle = has ? '#ff6b3d' : '#4fd1ff'; ctx.lineWidth = opt.lw * 3; ctx.stroke();
+  } else if (ui.tool === 'floor' && ui.floorMode === 'bridge') {
+    footprintPath(ctx, [{ ...axToPx(h.q, h.r) }], HEX); ctx.fillStyle = `rgba(${floorCol(focusFloor)},0.35)`; ctx.fill();
+    ctx.strokeStyle = `rgb(${floorCol(focusFloor)})`; ctx.lineWidth = opt.lw * 2; ctx.stroke();
+  } else if (ui.tool === 'floor') {   // the zone a click would change, with its ramps
+    const z = hoverZone(), col = z.leaks ? '255,179,92' : '79,209,255';
+    footprintPath(ctx, z.cells, HEX); ctx.fillStyle = `rgba(${col},0.22)`; ctx.fill();
+    strokeEdges(ctx, outerEdges(z.cells, HEX), opt.lw * 2, `rgb(${col})`);
+    strokeEdges(ctx, z.open.map(edgeEnds), HEX*0.1, 'rgb(120,220,190)');
   } else if (ui.tool !== 'pan') {
     const p = new Path2D();
     brushCells(h, ui.brush).forEach(c => { if (inB(c.q, c.r)) { const x = axToPx(c.q, c.r); hexSub(p, x.x, x.y, HEX); } });
@@ -365,25 +395,30 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && S &
 /* =========================================================================
    EDITING ACTIONS
    ========================================================================= */
-const snap = () => JSON.stringify({ cells: S.cells, zones: S.zones, effects: S.effects, edges: S.edges, objects: S.objects, lines: S.lines, nextId: S.nextId });
+const snap = () => JSON.stringify({ cells: S.cells, zones: S.zones, effects: S.effects, edges: S.edges, objects: S.objects, lines: S.lines, floors: S.floors, nextId: S.nextId });
 function pushUndo() { undoStack.push(snap()); if (undoStack.length > 200) undoStack.shift(); redoStack = []; updateUndoBtns(); }
-function restoreSnap(j) { const d = JSON.parse(j); S.cells = d.cells; S.zones = d.zones || {}; S.effects = d.effects || {}; S.edges = d.edges || {}; S.objects = d.objects; S.lines = d.lines || []; S.nextId = d.nextId; changed(); }
+function restoreSnap(j) { const d = JSON.parse(j); S.cells = d.cells; S.zones = d.zones || {}; S.effects = d.effects || {}; S.edges = d.edges || {}; S.objects = d.objects; S.lines = d.lines || []; S.floors = d.floors || {}; S.nextId = d.nextId; changed(); }
 function undo() { if (!undoStack.length) return; redoStack.push(snap()); restoreSnap(undoStack.pop()); updateUndoBtns(); }
 function redo() { if (!redoStack.length) return; undoStack.push(snap()); restoreSnap(redoStack.pop()); updateUndoBtns(); }
 function updateUndoBtns() { $('btnUndo').disabled = !undoStack.length; $('btnRedo').disabled = !redoStack.length; }
 
-function changed() { requestRender(); scheduleSave(); updateCounts(); }
+function changed() { ui.floorPrev = null; updateFloorBar(); requestRender(); scheduleSave(); updateCounts(); }
 function updateCounts() {
   let l = 0, h = 0; for (const k in S.cells) S.cells[k] === 'light' ? l++ : h++;
   let dz = 0, ez = 0; for (const k in S.zones) S.zones[k] === 'deploy' ? dz++ : ez++;
-  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Deploy: ${dz} · Extract: ${ez} · Difficult: ${Object.values(S.effects).filter(v => v === 'difficult').length} · Dangerous: ${Object.values(S.effects).filter(v => v === 'dangerous').length} · Climbs: ${Object.keys(S.edges).length} · Lines: ${S.lines.length} · Templates: ${S.objects.length}`;
+  $('stCounts').textContent = `Light cover: ${l} · Hard cover: ${h} · Deploy: ${dz} · Extract: ${ez} · Difficult: ${Object.values(S.effects).filter(v => v === 'difficult').length} · Dangerous: ${Object.values(S.effects).filter(v => v === 'dangerous').length} · Climbs: ${Object.keys(S.edges).length} · Lines: ${S.lines.length} · Raised: ${Object.keys(S.floors).length} · Templates: ${S.objects.length}`;
 }
 function paintAt(h) {
   const k = h.q + ',' + h.r; if (k === ui.lastPaintKey) return; ui.lastPaintKey = k;
+  if (ui.paintMode === 'bridge' || ui.paintMode === 'unbridge') {   // a bridge's deck goes on the floor in focus, over what's there
+    const rest = levelsOf(h).filter(l => l !== focusFloor);
+    setFloors(h, ui.paintMode === 'bridge' ? rest.concat(focusFloor) : rest);
+    changed(); return;
+  }
   brushCells(h, ui.brush).forEach(c => {
     if (!inB(c.q, c.r)) return; const key = keyOf(c.q, c.r);
     if (ui.paintMode === 'erase') {
-      delete S.cells[key]; delete S.zones[key]; delete S.effects[key];
+      delete S.cells[key]; delete S.zones[key]; delete S.effects[key]; delete S.floors[key];
       DIRS.forEach(([dq, dr]) => delete S.edges[edgeKey(c, { q: c.q + dq, r: c.r + dr })]);
     }
     else if (ui.paintMode === 'difficult' || ui.paintMode === 'dangerous') S.effects[key] = ui.paintMode;
@@ -494,6 +529,43 @@ function lineAt(w) {
   return -1;
 }
 function removeLine(i) { pushUndo(); const [l] = S.lines.splice(i, 1); dropClimbs(l); ui.hoverLine = -1; changed(); }
+/* ---- Floors: click inside a shape of climbs to raise it; small gaps in the shape become ramps ---- */
+function hoverZone() {
+  const level = nearestFloor(ui.hover, focusFloor), key = keyOf(ui.hover.q, ui.hover.r) + '/' + level + '/' + ui.gaps;
+  if (!ui.floorPrev || ui.floorPrev.key !== key) ui.floorPrev = { key, zone: floorZone(ui.hover, level, ui.gaps) };
+  return ui.floorPrev.zone;
+}
+function changeFloor(h, by) {
+  const from = nearestFloor(h, focusFloor), level = from + by;
+  if (level < 0) { toast('This is already the main floor'); return; }
+  if (level > MAX_FLOOR) { toast(`${MAX_FLOOR} floors is the most a map can have`); return; }
+  const z = floorZone(h, from, ui.gaps);
+  pushUndo();
+  z.cells.forEach(c => setFloors(c, levelsOf(c).filter(l => l !== from).concat(level)));
+  changed();
+  toast(z.leaks ? `This area isn't closed in by climbs, so ${z.cells.length} hexes changed. Ctrl+Z undoes it`
+    : `${z.cells.length} hex${z.cells.length === 1 ? '' : 'es'} now on ${floorName(level)}` + (z.open.length ? ` · ${z.open.length} open border${z.open.length === 1 ? '' : 's'}` : ''));
+}
+function floorPointerDown(e) {
+  const h = hexAt(e); if (!h || (e.button !== 0 && e.button !== 2)) return;
+  if (ui.floorMode === 'raise') { changeFloor(h, e.button === 2 ? -1 : 1); return; }
+  if (!focusFloor) { toast('Pick the floor the bridge is on first, in the list at the top left'); return; }
+  pushUndo(); ui.painting = true; ui.paintMode = e.button === 2 ? 'unbridge' : 'bridge'; ui.lastPaintKey = null; paintAt(h);
+}
+function setFloorMode(m) {
+  ui.floorMode = m;
+  document.querySelectorAll('#floorModeSeg button').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+  $('gapSeg').hidden = m !== 'raise';
+  $('floorHint').innerHTML = m === 'raise'
+    ? 'Click inside a shape made of climbs to raise it one floor; right-click to lower it. A gap of up to this many borders still counts as closed and becomes a ramp (2 borders is about 1 hex wide).'
+    : 'Pick the bridge\'s floor in the list at the top left, then drag across the hexes: they are on that floor <b>and</b> keep what is below, so tokens can walk under. Right-drag takes hexes off that floor.';
+  requestRender();
+}
+function setGaps(n) {
+  ui.gaps = n; ui.floorPrev = null;
+  document.querySelectorAll('#gapSeg button').forEach(b => b.classList.toggle('active', +b.dataset.g === n));
+  requestRender();
+}
 function setShape(s) {
   if (ui.draft) finishLine();
   ui.shape = s; document.querySelectorAll('#shapeSeg button').forEach(b => b.classList.toggle('active', b.dataset.s === s));
@@ -508,7 +580,8 @@ function setShape(s) {
 function setTool(t) {
   if (ui.draft && t !== 'line') finishLine();
   ui.tool = t; if (t !== 'template') ui.template = null;
-  $('lineOpts').hidden = t !== 'line'; $('brushSeg').hidden = t === 'line';
+  $('lineOpts').hidden = t !== 'line'; $('floorOpts').hidden = t !== 'floor'; $('brushSeg').hidden = t === 'line' || t === 'floor';
+  floorBarExtra = t === 'floor' ? 1 : 0; updateFloorBar();
   document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
   document.querySelectorAll('.tpl').forEach(b => b.classList.toggle('active', b.dataset.tpl === ui.template));
   updateCursor(); updateRotLabel(); requestRender();
@@ -539,6 +612,7 @@ cv.addEventListener('pointerdown', e => {
     ui.panning = true; ui.last = { x: e.clientX, y: e.clientY }; updateCursor(); requestRender(); return;
   }
   if (ui.tool === 'line') { linePointerDown(e); return; }
+  if (ui.tool === 'floor') { floorPointerDown(e); return; }
   if (ui.tool === 'climb' && (e.button === 0 || e.button === 2)) {
     const E = edgeAt(e); if (!E) return;
     // the first border decides whether this drag adds climbs or removes them; right-drag always removes
@@ -560,7 +634,7 @@ cv.addEventListener('pointermove', e => {
   if (ui.panning) { view.ox += e.clientX - ui.last.x; view.oy += e.clientY - ui.last.y; ui.last = { x: e.clientX, y: e.clientY }; requestRender(); return; }
   const h = hexAt(e);
   const prev = ui.hover; ui.hover = h;
-  if (h) { const o = axToOff(h.q, h.r); $('stHex').textContent = `Hex ${o.c + 1}, ${o.r + 1}`; } else $('stHex').textContent = 'Hex —';
+  if (h) { const o = axToOff(h.q, h.r), f = S.floors[keyOf(h.q, h.r)]; $('stHex').textContent = `Hex ${o.c + 1}, ${o.r + 1}` + (f ? ' · ' + f.map(floorName).join(' + ') : ''); } else $('stHex').textContent = 'Hex —';
   if (ui.tool === 'line') { linePointerMove(e); return; }
   if (ui.tool === 'climb') {
     const E = edgeAt(e), pk = ui.hoverEdge && ui.hoverEdge.key; ui.hoverEdge = E;
@@ -643,7 +717,8 @@ window.addEventListener('keydown', e => {
   if (k === '1') setTool('light'); else if (k === '2') setTool('hard'); else if (k === '3') setTool('erase'); else if (k === '4') setTool('pan');
   else if (k === '5') setTool('deploy'); else if (k === '6') setTool('extract');
   else if (k === '7') setTool('difficult'); else if (k === '8') setTool('climb'); else if (k === '9') setTool('dangerous');
-  else if (k === 'l') setTool('line');
+  else if (k === 'l') setTool('line'); else if (k === 'g') setTool('floor');
+  else if (k === 'pageup') { e.preventDefault(); stepFocus(1); } else if (k === 'pagedown') { e.preventDefault(); stepFocus(-1); }
   else if (k === 'r') rotate(e.shiftKey ? -1 : 1);
   else if (k === 'f') fitView();
   else if (k === 'escape') setTool('light');
@@ -689,7 +764,7 @@ function startEditor(map) {
   $('menu').style.display = 'none'; $('editor').style.display = 'grid';
   $('eName').value = S.name; $('eCols').value = S.cols; $('eRows').value = S.rows;
   $('showGrid').checked = S.showGrid; $('gridOp').value = S.gridOpacity; $('bgOp').value = S.bgOpacity;
-  ui.draft = null; loadBgImage(); updateCounts(); setTool('light'); setBrush(ui.brush); setShape(ui.shape);
+  ui.draft = null; focusFloor = 0; loadBgImage(); updateCounts(); setFloorMode(ui.floorMode); setTool('light'); setBrush(ui.brush); setShape(ui.shape); setGaps(ui.gaps);
   requestAnimationFrame(() => { fitView(); });
   saveNow();
 }
@@ -714,7 +789,7 @@ $('btnCreate').onclick = () => {
     version: 1, name: $('mName').value.trim() || 'New Battlefield',
     cols: clampInt($('mCols').value, 4, 100, 20), rows: clampInt($('mRows').value, 4, 100, 15),
     bg: pendingBg ? pendingBg.url : null, bgOpacity: 1, showGrid: true, gridOpacity: 0.45,
-    cells: {}, zones: {}, effects: {}, edges: {}, objects: [], lines: [], nextId: 1,
+    cells: {}, zones: {}, effects: {}, edges: {}, objects: [], lines: [], floors: {}, nextId: 1,
   });
 };
 $('btnContinue').onclick = () => { if (savedMap) startEditor(normalizeMap(savedMap)); };
@@ -771,6 +846,8 @@ function drawPreview(canvas, type) {
 document.querySelectorAll('.tool').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 document.querySelectorAll('#brushSeg button').forEach(b => b.onclick = () => setBrush(+b.dataset.b));
 document.querySelectorAll('#shapeSeg button').forEach(b => b.onclick = () => setShape(b.dataset.s));
+document.querySelectorAll('#gapSeg button').forEach(b => b.onclick = () => setGaps(+b.dataset.g));
+document.querySelectorAll('#floorModeSeg button').forEach(b => b.onclick = () => setFloorMode(b.dataset.m));
 $('snapCorners').onchange = e => { ui.snapCorners = e.target.checked; };
 $('rotL').onclick = () => rotate(-1);
 $('rotR').onclick = () => rotate(1);
@@ -790,8 +867,8 @@ $('btnSaveFile').onclick = saveToFile;
 $('btnMenu').onclick = async () => { await saveNow(); S = null; bgImg = null; $('btnBackToBattle').hidden = true; showMenu(); };
 $('btnBackToBattle').onclick = async () => { await saveNow(); location.href = 'Battlemap.html?from=editor'; };
 $('btnClear').onclick = () => {
-  if (!confirm('Remove all cover, zones, effects, lines and templates from this map? (You can undo this.)')) return;
-  pushUndo(); S.cells = {}; S.zones = {}; S.effects = {}; S.edges = {}; S.objects = []; S.lines = []; changed();
+  if (!confirm('Remove all cover, zones, effects, floors, lines and templates from this map? (You can undo this.)')) return;
+  pushUndo(); S.cells = {}; S.zones = {}; S.effects = {}; S.edges = {}; S.objects = []; S.lines = []; S.floors = {}; changed();
 };
 $('btnResize').onclick = () => {
   const c = clampInt($('eCols').value, 4, 100, S.cols), r = clampInt($('eRows').value, 4, 100, S.rows);
@@ -800,6 +877,7 @@ $('btnResize').onclick = () => {
   const old = { cols: S.cols, rows: S.rows }; S.cols = c; S.rows = r;
   const inside = k => { const [cc, rr2] = k.split(',').map(Number); return cc < c && rr2 < r; };
   const keepCells = Object.keys(S.cells).filter(inside), keepZones = Object.keys(S.zones).filter(inside);
+  const keepFloors = Object.keys(S.floors).filter(inside);
   const keepFx = Object.keys(S.effects).filter(inside), keepEdges = Object.keys(S.edges).filter(k => k.split('|').every(inside));
   const keepObjs = S.objects.filter(o => footprint(o.type, o.q, o.r, o.rot).every(x => inB(x.q, x.r)));
   const lost = Object.keys(S.cells).length - keepCells.length + Object.keys(S.zones).length - keepZones.length
@@ -809,6 +887,7 @@ $('btnResize').onclick = () => {
   const zones = {}; keepZones.forEach(k => zones[k] = S.zones[k]);
   const effects = {}; keepFx.forEach(k => effects[k] = S.effects[k]);
   const edges = {}; keepEdges.forEach(k => edges[k] = S.edges[k]);
+  const floors = {}; keepFloors.forEach(k => floors[k] = S.floors[k]); S.floors = floors;
   S.cells = cells; S.zones = zones; S.effects = effects; S.edges = edges; S.objects = keepObjs; undoStack = []; redoStack = []; updateUndoBtns();
   S.lines.forEach(l => { if (l.climbs) l.climbs = l.climbs.filter(k => edges[k]); });   // lines stay; their climbs off the map go
   fitView(); changed();
