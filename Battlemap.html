@@ -320,7 +320,7 @@ details.fold[open]>summary .foldnote{display:none}
       <summary><h3>Options</h3></summary>
       <label class="chk"><input type="checkbox" id="showNames" checked> Show token names</label>
       <label class="chk"><input type="checkbox" id="showMarks" checked> Show cover, engagement and Threat on tokens</label>
-      <label class="chk" title="Otherwise the ruler snaps to the hex of a big token that is easiest to hit"><input type="checkbox" id="exactAim"> Measure to the exact hex of big tokens <kbd>Shift</kbd></label>
+      <label class="chk" title="Otherwise the ruler snaps to the closest hex of a big token"><input type="checkbox" id="exactAim"> Measure to the exact hex of big tokens <kbd>Shift</kbd></label>
       <label class="chk gm-only"><input type="checkbox" id="showGrid" checked> Show grid lines</label>
       <label class="chk gm-only"><input type="checkbox" id="hardBlocks" checked> Hard cover blocks movement (roofs can be climbed)</label>
       <label class="chk gm-only"><input type="checkbox" id="newHidden"> New tokens start hidden</label>
@@ -668,15 +668,15 @@ function moveWarnings(m) {
 // Lancer cover against ranged attacks. Hard cover: the target is next to hard cover and every line from the
 // attacker's space to the target's passes through hard cover (otherwise the target is flanked). Soft cover: the
 // line between their centres passes light cover, or hard cover the target isn't next to.
-// `T` can be one hex of a bigger target: `own` is its whole space, whose own hexes never give it cover.
-// A shooter's own hard cover doesn't obscure their attacks: they shoot over, through or around it. So hard cover next
+// Cover belongs to the whole token: soft cover goes by the line between the two centres, hard cover by every line
+// between their spaces. A shooter's own hard cover doesn't obscure their attacks: they shoot over, through or around it. So hard cover next
 // to `shooter` doesn't count, unless it's next to the target too. A blast has no shooter at its centre.
-function coverBetween(A, T, own = T, shooter = A) {
-  const skip = new Set([...A, ...own].map(hkey)), touches = (c, cells) => cells.some(x => hd(c, x) === 1);
+function coverBetween(A, T, shooter = A) {
+  const skip = new Set([...A, ...T].map(hkey)), touches = (c, cells) => cells.some(x => hd(c, x) === 1);
   const cover = c => {
     if (skip.has(hkey(c))) return null;
     const v = S.cells[keyOf(c.q, c.r)];
-    return v === 'hard' && touches(c, shooter) && !touches(c, own) ? null : v;
+    return v === 'hard' && touches(c, shooter) && !touches(c, T) ? null : v;
   };
   const blocked = (a, b, e) => {
     const n = hd(a, b);
@@ -731,15 +731,10 @@ function tokenMarks(t) {
   }
   return [...bySide].flatMap(([side, types]) => types.map((type, i) => ({ type, angle: side * Math.PI/3 + (i - (types.length - 1) / 2) * 0.42 })));
 }
-// The hex of a big target that's easiest to hit: least cover, then shortest range, then nearest the cursor
-function bestCell(A, cells, near) {
-  const rank = c => { const k = coverBetween(A, [c], cells).kind; return k === 'hard' ? 2 : k === 'soft' ? 1 : 0; };
-  let best = null, score = null;
-  for (const c of cells) {
-    const s = [rank(c), setDist(A, [c]).d, hd(c, near)];
-    if (!best || s[0] < score[0] || (s[0] === score[0] && (s[1] < score[1] || (s[1] === score[1] && s[2] < score[2])))) { best = c; score = s; }
-  }
-  return best;
+// The hex of a big target in range soonest; of several equally close ones, the one nearest the cursor
+function closestCell(A, cells, cursor) {
+  const score = c => setDist(A, [c]).d * 1000 + hd(c, cursor);
+  return cells.reduce((best, c) => score(c) < score(best) ? c : best);
 }
 // Characters next to a hostile are engaged: +1 Difficulty on their ranged attacks
 const engagedWith = t => t && t.id != null ? shown().filter(o => hostileTo(t, o) && tokenFloor(o) === tokenFloor(t) && setDist(tokenCells(t), tokenCells(o)).d === 1) : [];
@@ -783,20 +778,21 @@ function computeArea() {
   const hits = shown().filter(t => t.id !== self && tokenCells(t).some(c => set.has(hkey(c))));
   // cover is worked out from the blast's centre, or from the attacker for the other patterns
   const from = A.kind === 'blast' ? [cellAt(center.q, center.r)] : F;
-  const covers = new Map(hits.map(t => [t.id, coverBetween(from, tokenCells(t), tokenCells(t), A.kind === 'blast' ? [] : from)]));
+  const covers = new Map(hits.map(t => [t.id, coverBetween(from, tokenCells(t), A.kind === 'blast' ? [] : from)]));
   const attacker = A.origin && A.origin.token != null ? tokenById(A.origin.token) : null;
   return { kind: A.kind, X: A.X, cells, set, hits, covers, range, center, origin: F, engaged: engagedWith(attacker), attacker };
 }
 function computeRuler() {
   const R = ui.ruler; if (!R || !R.to) return null;
   const Fa = originCells(R.from), whole = originCells(R.to); if (!Fa || !whole) return null;
-  // measuring to a big token: to the best hex, or to the exact one if asked and the cursor is on it
+  // measuring to a big token: to its closest hex, or to the exact one if asked and the cursor is on it. That only
+  // changes the range; cover is the whole token's
   let Fb = whole, aim = null, closest = null;
   const near = setDist(Fa, whole);
   if (R.to.token != null && R.to.token !== R.from.token && whole.length > 1) {
     const picked = R.exact ? whole.find(c => hkey(c) === hkey(R.toHex)) : null;
-    Fb = [picked || bestCell(Fa, whole, R.toHex)]; aim = picked ? 'exact' : 'best';
-    if (hkey(near.b) !== hkey(Fb[0])) closest = { d: near.d, cover: coverBetween(Fa, [near.b], whole) };
+    Fb = [picked || closestCell(Fa, whole, R.toHex)]; aim = picked ? 'exact' : 'closest';
+    if (setDist(Fa, Fb).d > near.d) closest = near.d;
   }
   const { d, a, b } = setDist(Fa, Fb);
   const skip = new Set([...Fa, ...whole].map(hkey));
@@ -813,11 +809,12 @@ function computeRuler() {
   const detour = !!best && (!straight || best.cost < straight.cost);
   const tA = R.from.token != null ? tokenById(R.from.token) : null, tB = R.to.token != null ? tokenById(R.to.token) : null;
   // what an attack along this line would run into, also when the far end is just a hex
-  const tcover = d > 0 ? coverBetween(Fa, Fb, whole) : null;
+  const tcover = d > 0 ? coverBetween(Fa, whole) : null;
   return { d, a, b, path, cover, move: detour ? best : straight, detour, straight, from: originName(R.from), to: originName(R.to),
            tcover, engaged: tcover && tA && tB ? engagedWith(tA) : [], showMove: !toOther,
            // further off than adjacent (that's engaged) but inside the measuring token's reach
-           inThreat: !!tA && !!tB && hostileTo(tA, tB) && tokenFloor(tA) === tokenFloor(tB) && near.d > 1 && near.d <= (tA.threat || 1), aim, closest };
+           inThreat: !!tA && !!tB && hostileTo(tA, tB) && tokenFloor(tA) === tokenFloor(tB) && near.d > 1 && near.d <= (tA.threat || 1), aim, closest,
+           centres: Fa.length > 1 || whole.length > 1 ? [centroid(Fa), centroid(whole)] : null };
 }
 
 /* =========================================================================
@@ -949,8 +946,13 @@ function drawRuler(ctx, lw, M, labels) {
   const a = axToPx(M.a.q, M.a.r), b = axToPx(M.b.q, M.b.r);
   ctx.lineCap = 'round';
   if (M.aim) {   // which hex of the big token it's aimed at: dashed when the ruler chose it, solid when you did
-    ctx.beginPath(); hexSub(ctx, b.x, b.y, HEX*0.86); ctx.setLineDash(M.aim === 'best' ? [HEX*0.16, HEX*0.11] : []);
+    ctx.beginPath(); hexSub(ctx, b.x, b.y, HEX*0.86); ctx.setLineDash(M.aim === 'closest' ? [HEX*0.16, HEX*0.11] : []);
     ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = HEX*0.07; ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (M.centres) {   // with a big token the range line isn't the one that decides soft cover, so show that one too
+    const [ca, cb] = M.centres;
+    ctx.beginPath(); ctx.moveTo(ca.x, ca.y); ctx.lineTo(cb.x, cb.y); ctx.setLineDash([HEX*0.14, HEX*0.14]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = HEX*0.035; ctx.stroke(); ctx.setLineDash([]);
   }
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = HEX*0.16; ctx.stroke();
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = HEX*0.07; ctx.stroke();
@@ -1034,16 +1036,16 @@ function updateInfo(A, M, Dm) {
       moveWarnings(M.move).forEach(w => lines.push(`<span class="warn">${w}</span>`));
     }
     if (M.aim) {
-      lines.push(`<span class="muted">${M.aim === 'best' ? `Aimed at the easiest hex of ${esc(M.to)}.` : `Aimed at this hex of ${esc(M.to)}.`} Hold Shift, or right-drag the end, to choose.</span>`);
-      if (M.closest) lines.push(`<span class="muted">Its closest hex: range ${M.closest.d}, ${coverText(M.closest.cover)}.</span>`);
+      lines.push(`<span class="muted">${M.aim === 'closest' ? `Aimed at the closest hex of ${esc(M.to)}.` : `Aimed at this hex of ${esc(M.to)}${M.closest ? ` (its closest is range ${M.closest})` : ''}.`} Hold Shift, or right-drag the end, to choose.</span>`);
     }
+    if (M.centres && M.tcover && M.tcover.kind === 'soft') lines.push(`<span class="muted">The thin dashed line, centre to centre, decides soft cover.</span>`);
     if (M.tcover && (M.to || M.tcover.kind)) lines.push(`${M.to ? esc(M.to) : 'A target there'} has <b>${coverText(M.tcover)}</b> against ranged attacks <span class="muted">(melee and tech ignore cover)</span>`);
     if (M.engaged.length) lines.push(`<span class="warn">${esc(M.from)} is engaged by ${names(M.engaged)}: +1 Difficulty on ranged attacks (${ENGAGED_TIP})</span>`);
     if (M.inThreat) lines.push(`<span class="warn">${esc(M.to)} is inside ${esc(M.from)}'s Threat: Overwatch if it starts moving</span>`);
     const c = [];
     if (M.cover.hard) c.push(`${M.cover.hard} hard cover hex${M.cover.hard > 1 ? 'es' : ''}`);
     if (M.cover.light) c.push(`${M.cover.light} light cover hex${M.cover.light > 1 ? 'es' : ''}`);
-    if (c.length) lines.push(`<span class="warn">On the path: ${c.join(', ')}</span>`);
+    if (c.length && !M.centres) lines.push(`<span class="warn">On the path: ${c.join(', ')}</span>`);
   }
   if (A) {
     const name = { line:'Line', cone:'Cone', blast:'Blast', burst:'Burst' }[A.kind];
