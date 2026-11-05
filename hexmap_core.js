@@ -886,7 +886,14 @@ const TILE_SYMBOLS = {
   deploy: (p, x, y, s) => chevrons(p, x, y, s, 1),
   extract: (p, x, y, s) => chevrons(p, x, y, s, -1),
 };
-const tileLook = type => COVER[type] || EFFECTS[type] || ZONES[type];
+// Status marks on a token's rim: crossed blades when engaged, a crosshair when inside an enemy's longer Threat
+const TOKEN_MARKS = { engaged: { sym:'255,140,120', label:'Engaged' }, threat: { sym:'255,205,120', label:'Threat' } };
+TILE_SYMBOLS.engaged = (p, x, y, s) => { for (const d of [1, -1]) { p.moveTo(x - d*s*0.85, y - s*0.85); p.lineTo(x + d*s*0.85, y + s*0.85); } };
+TILE_SYMBOLS.threat = (p, x, y, s) => {
+  p.moveTo(x + s*0.65, y); p.arc(x, y, s*0.65, 0, TAU);
+  for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { p.moveTo(x + a*s*0.35, y + b*s*0.35); p.lineTo(x + a*s*1.1, y + b*s*1.1); }
+};
+const tileLook = type => COVER[type] || EFFECTS[type] || ZONES[type] || TOKEN_MARKS[type];
 function strokeSymbols(ctx, type, path, w) {
   const look = tileLook(type);
   ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';

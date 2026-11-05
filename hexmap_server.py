@@ -100,11 +100,11 @@ def links():
 SIDES = {"pc", "ally", "hostile", "neutral"}
 PLAYER_SIDES = {"pc", "ally"}
 SIZES = (0.5, 1, 2, 3, 4)
-FIELDS = ("name", "side", "size", "q", "r", "rot", "floor", "img", "hidden", "art", "speed", "limit", "turn", "moved")
-PLAYER_FIELDS = {"name", "size", "q", "r", "rot", "floor", "img", "art", "speed", "limit", "turn", "moved"}   # what a player may change on a token they run
+FIELDS = ("name", "side", "size", "q", "r", "rot", "floor", "img", "hidden", "art", "speed", "limit", "turn", "moved", "threat")
+PLAYER_FIELDS = {"name", "size", "q", "r", "rot", "floor", "img", "art", "speed", "limit", "turn", "moved", "threat"}   # what a player may change on a token they run
 ART_RE = re.compile(r"^[Tt]okens/[^/]+$")
 
-TOKEN_DEFAULTS = {"floor": 0, "speed": None, "limit": False, "turn": False, "moved": 0}
+TOKEN_DEFAULTS = {"floor": 0, "speed": None, "limit": False, "turn": False, "moved": 0, "threat": 1}
 
 changed = threading.Condition()        # guards everything below; notified on every change
 state = {"battle": None, "players": {}, "version": 1, "mapVersion": 1}
@@ -186,6 +186,8 @@ def clean_token(raw, base=None):
     for k in ("limit", "turn"):
         if isinstance(raw.get(k), bool):
             t[k] = raw[k]
+    if is_num(raw.get("threat")):
+        t["threat"] = max(1, min(99, int(round(raw["threat"]))))
     if is_num(raw.get("moved")):
         t["moved"] = max(0, min(999, int(round(raw["moved"]))))
     if "img" in raw and (raw["img"] is None or (isinstance(raw["img"], str) and raw["img"].startswith("data:image/"))):

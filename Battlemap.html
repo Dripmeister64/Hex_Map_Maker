@@ -153,7 +153,7 @@ details.fold[open]>summary .foldnote{display:none}
 .toggles{margin-top:6px}
 #speedRow{display:flex;align-items:center;gap:8px;margin-top:8px}
 #speedRow>span{font-size:12px;color:var(--muted)}
-#tSpeed{width:52px;background:#0f1319;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit;font-size:13px}
+#tSpeed,#tThreat{width:52px;background:#0f1319;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit;font-size:13px}
 #speedRow label.chk{margin:0}
 #turnNote.over{color:#ff7a6b}
 #floorBar{position:absolute;left:12px;top:12px;display:flex;flex-direction:column;gap:3px;background:rgba(21,26,33,.9);
@@ -260,6 +260,7 @@ details.fold[open]>summary .foldnote{display:none}
       <div class="seg" id="tSizeSeg"><span>Size</span></div>
       <div id="speedRow">
         <span>Speed</span><input type="number" id="tSpeed" min="0" max="99" placeholder="–">
+        <span title="How far its weapons threaten: enemies that start moving inside it can provoke Overwatch">Threat</span><input type="number" id="tThreat" min="1" max="99">
       </div>
       <div class="readonly" id="turnNote" hidden></div>
       <div class="btnrow" id="imgRow">
@@ -318,6 +319,8 @@ details.fold[open]>summary .foldnote{display:none}
     <details class="fold" data-fold="options">
       <summary><h3>Options</h3></summary>
       <label class="chk"><input type="checkbox" id="showNames" checked> Show token names</label>
+      <label class="chk"><input type="checkbox" id="showMarks" checked> Show cover, engagement and Threat on tokens</label>
+      <label class="chk" title="Otherwise the ruler snaps to the hex of a big token that is easiest to hit"><input type="checkbox" id="exactAim"> Measure to the exact hex of big tokens <kbd>Shift</kbd></label>
       <label class="chk gm-only"><input type="checkbox" id="showGrid" checked> Show grid lines</label>
       <label class="chk gm-only"><input type="checkbox" id="hardBlocks" checked> Hard cover blocks movement (roofs can be climbed)</label>
       <label class="chk gm-only"><input type="checkbox" id="newHidden"> New tokens start hidden</label>
@@ -388,7 +391,7 @@ let bgImg = null;        // decoded background image
 let B = { tokens: [], nextId: 1, log: [] };   // everything placed on top of the map
 const view = { scale: 1, ox: 0, oy: 0 };
 const ui = { tool:'move', X:3, newSize:1, sel:null, hover:null, space:false, panning:false, last:null,
-             drag:null, ruler:null, area:null, showNames:true, hardBlocks:true, gm:false, newHidden:false, trails:[] };
+             drag:null, ruler:null, area:null, showNames:true, showMarks:true, exactAim:false, hardBlocks:true, gm:false, newHidden:false, trails:[] };
 let undoStack = [], redoStack = [];
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
@@ -596,7 +599,7 @@ function moveRules(t, from, to) {
       danger: steps.filter(st => st.dangerous).length,
       engagedBy: steps.length ? engagedBy(last.q, last.r, last.f) : null,
       occupied: steps.length ? shown().filter(o => o.id !== t.id && tokenFloor(o) === last.f && tokenCells(o).some(c => endSet.has(hkey(c)))) : [],
-      overwatch: steps.length ? others.filter(o => hostileTo(t, o) && tokenFloor(o) === startFloor && setDist(start, tokenCells(o)).d === 1) : [],
+      overwatch: steps.length ? others.filter(o => hostileTo(t, o) && tokenFloor(o) === startFloor && setDist(start, tokenCells(o)).d <= (o.threat || 1)) : [],
     };
   };
   return { cellsAt, open, engagedBy, result, startFloor };
@@ -656,7 +659,7 @@ function moveWarnings(m) {
   if (m.engagedBy) w.push(`Engaged by ${esc(m.engagedBy.name)}: movement stops here`);
   if (m.occupied.length) w.push(`Can't end a move in ${names(m.occupied)}'s space`);
   if (m.danger) w.push(`Enters dangerous terrain: Engineering check or take 5 damage`);
-  if (m.overwatch.length) w.push(`Starts next to ${names(m.overwatch)}: may provoke Overwatch`);
+  if (m.overwatch.length) w.push(`Starts inside the Threat of ${names(m.overwatch)}: may provoke Overwatch`);
   const left = movesLeft(tokenById(m.id));
   if (left != null && m.cost > left) w.push(`Not enough movement: this costs ${m.cost}, ${Math.max(0, left)} left this turn. The extra ${m.cost - Math.max(0, left)} shows in red`);
   return w;
@@ -665,8 +668,16 @@ function moveWarnings(m) {
 // Lancer cover against ranged attacks. Hard cover: the target is next to hard cover and every line from the
 // attacker's space to the target's passes through hard cover (otherwise the target is flanked). Soft cover: the
 // line between their centres passes light cover, or hard cover the target isn't next to.
-function coverBetween(A, T) {
-  const skip = new Set([...A, ...T].map(hkey)), cover = c => skip.has(hkey(c)) ? null : S.cells[keyOf(c.q, c.r)];
+// `T` can be one hex of a bigger target: `own` is its whole space, whose own hexes never give it cover.
+// A shooter's own hard cover doesn't obscure their attacks: they shoot over, through or around it. So hard cover next
+// to `shooter` doesn't count, unless it's next to the target too. A blast has no shooter at its centre.
+function coverBetween(A, T, own = T, shooter = A) {
+  const skip = new Set([...A, ...own].map(hkey)), touches = (c, cells) => cells.some(x => hd(c, x) === 1);
+  const cover = c => {
+    if (skip.has(hkey(c))) return null;
+    const v = S.cells[keyOf(c.q, c.r)];
+    return v === 'hard' && touches(c, shooter) && !touches(c, own) ? null : v;
+  };
   const blocked = (a, b, e) => {
     const n = hd(a, b);
     for (let i = 1; i < n; i++) { const h = axRound(a.q + (b.q - a.q)*i/n + e, a.r + (b.r - a.r)*i/n + e); if (cover(h) === 'hard') return true; }
@@ -682,8 +693,54 @@ function coverBetween(A, T) {
   }
   return { kind: null, flanked: nextToHard };
 }
-const coverText = c => c.kind === 'hard' ? 'hard cover (+2 Difficulty)' : c.kind === 'soft' ? 'soft cover (+1 Difficulty)'
+// Each point of Difficulty takes 1d6 off the attack roll
+const COVER_TIP = { soft: '-1d6', hard: '-2d6' }, ENGAGED_TIP = '-1d6', coverSymbol = kind => kind === 'hard' ? 'hard' : 'light';
+const coverText = c => c.kind === 'hard' ? 'hard cover (+2 Difficulty, -2d6)' : c.kind === 'soft' ? 'soft cover (+1 Difficulty, -1d6)'
   : c.flanked ? 'no cover (flanked)' : 'no cover';
+// The cover tiles right next to a token, one for each of the six directions (hard cover counts over light)
+function coverAround(t) {
+  const cells = tokenCells(t), own = new Set(cells.map(hkey)), m = centroid(cells), sides = new Map();
+  for (const c of cells) for (const [dq, dr] of DIRS) {
+    const n = cellAt(c.q + dq, c.r + dr), type = inB(n.q, n.r) && !own.has(hkey(n)) ? S.cells[keyOf(n.q, n.r)] : null;
+    if (!COVER[type]) continue;
+    const side = ((Math.round(Math.atan2(n.y - m.y, n.x - m.x) / (Math.PI/3)) % 6) + 6) % 6;
+    if (sides.get(side) !== 'hard') sides.set(side, type);
+  }
+  return [...sides].map(([side, type]) => ({ side, type }));
+}
+// Enemies on the same floor: next to one is engaged, which already means being inside its Threat, so the Threat mark is
+// for an enemy further off with a longer reach. Only characters the viewer can see count, so hidden tokens give nothing away.
+function enemiesAround(t) {
+  const cells = tokenCells(t), m = centroid(cells), f = tokenFloor(t), out = [];
+  for (const o of shown()) {
+    if (o.id === t.id || !hostileTo(t, o) || tokenFloor(o) !== f) continue;
+    const oc = tokenCells(o), d = setDist(cells, oc).d, type = d === 1 ? 'engaged' : d <= (o.threat || 1) ? 'threat' : null;
+    if (!type) continue;
+    const c = centroid(oc);
+    out.push({ side: ((Math.round(Math.atan2(c.y - m.y, c.x - m.x) / (Math.PI/3)) % 6) + 6) % 6, type, by: o });
+  }
+  return out;
+}
+// Everything to mark on a token's rim, one of each kind per side, spread out if a side has several
+function tokenMarks(t) {
+  const seen2 = new Set(), bySide = new Map();
+  for (const k of [...coverAround(t), ...enemiesAround(t)]) {
+    const id = k.side + '/' + k.type; if (seen2.has(id)) continue; seen2.add(id);
+    if (!bySide.has(k.side)) bySide.set(k.side, []);
+    bySide.get(k.side).push(k.type);
+  }
+  return [...bySide].flatMap(([side, types]) => types.map((type, i) => ({ type, angle: side * Math.PI/3 + (i - (types.length - 1) / 2) * 0.42 })));
+}
+// The hex of a big target that's easiest to hit: least cover, then shortest range, then nearest the cursor
+function bestCell(A, cells, near) {
+  const rank = c => { const k = coverBetween(A, [c], cells).kind; return k === 'hard' ? 2 : k === 'soft' ? 1 : 0; };
+  let best = null, score = null;
+  for (const c of cells) {
+    const s = [rank(c), setDist(A, [c]).d, hd(c, near)];
+    if (!best || s[0] < score[0] || (s[0] === score[0] && (s[1] < score[1] || (s[1] === score[1] && s[2] < score[2])))) { best = c; score = s; }
+  }
+  return best;
+}
 // Characters next to a hostile are engaged: +1 Difficulty on their ranged attacks
 const engagedWith = t => t && t.id != null ? shown().filter(o => hostileTo(t, o) && tokenFloor(o) === tokenFloor(t) && setDist(tokenCells(t), tokenCells(o)).d === 1) : [];
 
@@ -726,15 +783,23 @@ function computeArea() {
   const hits = shown().filter(t => t.id !== self && tokenCells(t).some(c => set.has(hkey(c))));
   // cover is worked out from the blast's centre, or from the attacker for the other patterns
   const from = A.kind === 'blast' ? [cellAt(center.q, center.r)] : F;
-  const covers = new Map(hits.map(t => [t.id, coverBetween(from, tokenCells(t))]));
+  const covers = new Map(hits.map(t => [t.id, coverBetween(from, tokenCells(t), tokenCells(t), A.kind === 'blast' ? [] : from)]));
   const attacker = A.origin && A.origin.token != null ? tokenById(A.origin.token) : null;
   return { kind: A.kind, X: A.X, cells, set, hits, covers, range, center, origin: F, engaged: engagedWith(attacker), attacker };
 }
 function computeRuler() {
   const R = ui.ruler; if (!R || !R.to) return null;
-  const Fa = originCells(R.from), Fb = originCells(R.to); if (!Fa || !Fb) return null;
+  const Fa = originCells(R.from), whole = originCells(R.to); if (!Fa || !whole) return null;
+  // measuring to a big token: to the best hex, or to the exact one if asked and the cursor is on it
+  let Fb = whole, aim = null, closest = null;
+  const near = setDist(Fa, whole);
+  if (R.to.token != null && R.to.token !== R.from.token && whole.length > 1) {
+    const picked = R.exact ? whole.find(c => hkey(c) === hkey(R.toHex)) : null;
+    Fb = [picked || bestCell(Fa, whole, R.toHex)]; aim = picked ? 'exact' : 'best';
+    if (hkey(near.b) !== hkey(Fb[0])) closest = { d: near.d, cover: coverBetween(Fa, [near.b], whole) };
+  }
   const { d, a, b } = setDist(Fa, Fb);
-  const skip = new Set([...Fa, ...Fb].map(hkey));
+  const skip = new Set([...Fa, ...whole].map(hkey));
   const path = hexLine(a, b).slice(1).map(h => cellAt(h.q, h.r));
   const cover = { light: 0, hard: 0 };
   path.forEach(c => { if (skip.has(hkey(c))) return; const v = S.cells[keyOf(c.q, c.r)]; if (v) cover[v]++; });
@@ -747,9 +812,12 @@ function computeRuler() {
   // only offer another route when it is actually cheaper than going straight
   const detour = !!best && (!straight || best.cost < straight.cost);
   const tA = R.from.token != null ? tokenById(R.from.token) : null, tB = R.to.token != null ? tokenById(R.to.token) : null;
-  const tcover = tA && tB && tA !== tB ? coverBetween(Fa, Fb) : null;
+  // what an attack along this line would run into, also when the far end is just a hex
+  const tcover = d > 0 ? coverBetween(Fa, Fb, whole) : null;
   return { d, a, b, path, cover, move: detour ? best : straight, detour, straight, from: originName(R.from), to: originName(R.to),
-           tcover, engaged: tcover ? engagedWith(tA) : [], showMove: !toOther };
+           tcover, engaged: tcover && tA && tB ? engagedWith(tA) : [], showMove: !toOther,
+           // further off than adjacent (that's engaged) but inside the measuring token's reach
+           inThreat: !!tA && !!tB && hostileTo(tA, tB) && tokenFloor(tA) === tokenFloor(tB) && near.d > 1 && near.d <= (tA.threat || 1), aim, closest };
 }
 
 /* =========================================================================
@@ -825,6 +893,7 @@ function drawToken(ctx, t, lw, hit) {
     circle(ctx, m.x, m.y, R + HEX*(hit ? 0.27 : t.turn ? 0.24 : 0.15)); ctx.setLineDash([HEX*0.18, HEX*0.12]);
     ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = Math.max(lw*2.5, HEX*0.05); ctx.stroke(); ctx.setLineDash([]);
   }
+  if (ui.showMarks) drawTokenMarks(ctx, t, m, R);
   if (ui.showNames && t.name) pill(ctx, m.x, m.y + R + HEX*0.22, t.name + (t.owner ? ` · ${t.mine ? 'you' : t.owner}` : '') + (elsewhere ? ` · ${floorName(tokenFloor(t))}` : ''), HEX*0.26, `rgba(${col},0.9)`);
   ctx.restore();
   if (t.hidden) pill(ctx, m.x, m.y - R - HEX*0.18, 'HIDDEN', HEX*0.22, '#ff6b3d', 'rgba(40,16,8,0.9)');
@@ -855,16 +924,44 @@ function drawArea(ctx, lw, A) {
   }
 }
 
+// A symbol and a short note at the end of the ruler: "-1d6" for cover or being engaged, or that the target is in Threat
+function rulerTip(ctx, x, y, type, text) {
+  const size = 15, look = tileLook(type), sym = new Path2D();
+  ctx.font = `600 ${size}px "Segoe UI",system-ui,sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const tw = ctx.measureText(text).width, w = tw + size*2.3, h = size*1.5, left = x - w/2;
+  rr(ctx, left, y - h/2, w, h, h/2); ctx.fillStyle = 'rgba(12,16,22,0.92)'; ctx.fill();
+  ctx.strokeStyle = `rgb(${look.sym})`; ctx.lineWidth = size*0.1; ctx.stroke();
+  TILE_SYMBOLS[type](sym, left + size*0.85, y, size*0.42); strokeSymbols(ctx, type, sym, 1.5);
+  ctx.fillStyle = '#eef3f8'; ctx.fillText(text, left + size*1.5, y + size*0.04);
+}
+// Small symbols on the token's rim, on the side the cover tile or enemy is on
+function drawTokenMarks(ctx, t, m, R) {
+  for (const { angle, type } of tokenMarks(t)) {
+    const x = m.x + Math.cos(angle)*R, y = m.y + Math.sin(angle)*R, s = HEX*0.1, sym = new Path2D();
+    circle(ctx, x, y, s*1.55); ctx.fillStyle = 'rgba(12,15,20,0.9)'; ctx.fill();
+    TILE_SYMBOLS[type](sym, x, y, s); strokeSymbols(ctx, type, sym, HEX*0.025);
+  }
+}
 function drawRuler(ctx, lw, M, labels) {
   if (!M) return;
   const tint = c => { const v = S.cells[keyOf(c.q, c.r)]; return v === 'hard' ? 'rgba(255,90,74,0.45)' : v === 'light' ? 'rgba(120,230,130,0.4)' : 'rgba(79,209,255,0.28)'; };
   M.path.forEach(c => { ctx.beginPath(); hexSub(ctx, c.x, c.y, HEX*0.86); ctx.fillStyle = tint(c); ctx.fill(); });
   const a = axToPx(M.a.q, M.a.r), b = axToPx(M.b.q, M.b.r);
   ctx.lineCap = 'round';
+  if (M.aim) {   // which hex of the big token it's aimed at: dashed when the ruler chose it, solid when you did
+    ctx.beginPath(); hexSub(ctx, b.x, b.y, HEX*0.86); ctx.setLineDash(M.aim === 'best' ? [HEX*0.16, HEX*0.11] : []);
+    ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = HEX*0.07; ctx.stroke(); ctx.setLineDash([]);
+  }
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = HEX*0.16; ctx.stroke();
   ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = HEX*0.07; ctx.stroke();
   for (const p of [a, b]) { circle(ctx, p.x, p.y, HEX*0.14); ctx.fillStyle = '#4fd1ff'; ctx.fill(); }
   labels.push({ x: b.x, y: b.y, text: `Range ${M.d}`, col: '#4fd1ff' });
+  // stacked above the range: what an attack along this line would run into
+  const tips = [];
+  if (M.tcover && M.tcover.kind) tips.push([coverSymbol(M.tcover.kind), COVER_TIP[M.tcover.kind]]);
+  if (M.engaged.length) tips.push(['engaged', ENGAGED_TIP]);
+  if (M.inThreat) tips.push(['threat', 'In Threat']);
+  tips.forEach(([type, text], i) => labels.push({ x: b.x, y: b.y, tip: type, text, lift: 27*(i + 1) }));
 }
 
 function requestRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(render); } }
@@ -916,7 +1013,10 @@ function render() {
 
   // labels at a fixed on-screen size
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  for (const L of labels) pill(ctx, L.x*view.scale + view.ox, L.y*view.scale + view.oy - 26, L.text, 15, L.col);
+  for (const L of labels) {
+    const x = L.x*view.scale + view.ox, y = L.y*view.scale + view.oy - 26;
+    if (L.tip) rulerTip(ctx, x, y - L.lift, L.tip, L.text); else pill(ctx, x, y, L.text, 15, L.col);
+  }
   updateInfo(A, M, D ? dragMove : null);
 }
 
@@ -933,8 +1033,13 @@ function updateInfo(A, M, Dm) {
       lines.push(mv);
       moveWarnings(M.move).forEach(w => lines.push(`<span class="warn">${w}</span>`));
     }
-    if (M.tcover) lines.push(`${esc(M.to)} has <b>${coverText(M.tcover)}</b> against ranged attacks <span class="muted">(melee and tech ignore cover)</span>`);
-    if (M.engaged.length) lines.push(`<span class="warn">${esc(M.from)} is engaged by ${names(M.engaged)}: +1 Difficulty on ranged attacks</span>`);
+    if (M.aim) {
+      lines.push(`<span class="muted">${M.aim === 'best' ? `Aimed at the easiest hex of ${esc(M.to)}.` : `Aimed at this hex of ${esc(M.to)}.`} Hold Shift, or right-drag the end, to choose.</span>`);
+      if (M.closest) lines.push(`<span class="muted">Its closest hex: range ${M.closest.d}, ${coverText(M.closest.cover)}.</span>`);
+    }
+    if (M.tcover && (M.to || M.tcover.kind)) lines.push(`${M.to ? esc(M.to) : 'A target there'} has <b>${coverText(M.tcover)}</b> against ranged attacks <span class="muted">(melee and tech ignore cover)</span>`);
+    if (M.engaged.length) lines.push(`<span class="warn">${esc(M.from)} is engaged by ${names(M.engaged)}: +1 Difficulty on ranged attacks (${ENGAGED_TIP})</span>`);
+    if (M.inThreat) lines.push(`<span class="warn">${esc(M.to)} is inside ${esc(M.from)}'s Threat: Overwatch if it starts moving</span>`);
     const c = [];
     if (M.cover.hard) c.push(`${M.cover.hard} hard cover hex${M.cover.hard > 1 ? 'es' : ''}`);
     if (M.cover.light) c.push(`${M.cover.light} light cover hex${M.cover.light > 1 ? 'es' : ''}`);
@@ -946,9 +1051,9 @@ function updateInfo(A, M, Dm) {
     if (A.kind === 'blast' && A.range != null) t += ` · centre at range ${A.range}`;
     lines.push(t);
     lines.push(A.hits.length ? 'Hits: ' + A.hits.map(h => {
-      const c = A.covers.get(h.id); return esc(h.name) + (c.kind ? ` <span class="muted">(${c.kind} cover)</span>` : '');
+      const c = A.covers.get(h.id); return esc(h.name) + (c.kind ? ` <span class="muted">(${c.kind} cover, ${COVER_TIP[c.kind]})</span>` : '');
     }).join(', ') : '<span class="muted">No tokens caught</span>');
-    if (A.engaged.length) lines.push(`<span class="warn">${esc(A.attacker.name)} is engaged by ${names(A.engaged)}: +1 Difficulty on ranged attacks</span>`);
+    if (A.engaged.length) lines.push(`<span class="warn">${esc(A.attacker.name)} is engaged by ${names(A.engaged)}: +1 Difficulty on ranged attacks (${ENGAGED_TIP})</span>`);
   }
   if (Dm) {
     lines.push(`<b>${moveText(Dm)}</b>${moveDetail(Dm) ? ` <span class="warn">(${moveDetail(Dm)})</span>` : ''}`);
@@ -1032,6 +1137,7 @@ function normalizeTokens(list) {
     // who plays it: their name, whether it's this screen's player, and (for the GM) their id
     owner: typeof t.owner === 'string' ? t.owner : null, mine: !!t.mine, ownerId: typeof t.ownerId === 'string' ? t.ownerId : null,
     speed: Number.isFinite(t.speed) ? Math.max(0, Math.min(99, Math.round(t.speed))) : null, limit: !!t.limit, turn: !!t.turn, moved: Math.max(0, Math.round(t.moved) || 0),
+    threat: Number.isFinite(t.threat) ? Math.max(1, Math.min(99, Math.round(t.threat))) : 1,
   }));
 }
 const normalizeLog = list => (Array.isArray(list) ? list : []).filter(e => e && typeof e.text === 'string')
@@ -1077,7 +1183,7 @@ function addToken(side) {
   if (!ui.gm && side !== 'ally') return;
   if (net.role === 'guest') { openJoin(); return; }
   const n = B.tokens.filter(t => t.side === side).length + 1;
-  const t = { id: B.nextId, name: `${SIDES[side].label} ${n}`, side, size: ui.newSize, q: 0, r: 0, rot: 0, floor: focusFloor, img: null, hidden: ui.gm && ui.newHidden, speed: null, limit: false, turn: myTurnOn(), moved: 0 };
+  const t = { id: B.nextId, name: `${SIDES[side].label} ${n}`, side, size: ui.newSize, q: 0, r: 0, rot: 0, floor: focusFloor, img: null, hidden: ui.gm && ui.newHidden, speed: null, limit: false, turn: myTurnOn(), moved: 0, threat: 1 };
   const h = freeSpotFor(t); if (!h) { toast('No free space for a token that size'); return; }
   pushUndo(); t.q = h.q; t.r = h.r; t.floor = nearestFloor(h, focusFloor); B.nextId++; B.tokens.push(t); ui.sel = t.id;
   logEvent(ui.gm ? `${t.name} placed${t.hidden ? ' (hidden)' : ''}` : `${t.name} deployed`, t.hidden); commit();
@@ -1166,6 +1272,7 @@ function updateSelBox() {
   }
   $('nameRow').hidden = $('imgRow').hidden = $('speedRow').hidden = $('limitRow').hidden = !edit;
   if (document.activeElement !== $('tSpeed')) $('tSpeed').value = t.speed == null ? '' : t.speed;
+  if (document.activeElement !== $('tThreat')) $('tThreat').value = t.threat;
   $('tLimit').checked = !!t.limit; $('tLimit').disabled = t.speed == null;
   const left = movesLeft(t), note = $('turnNote');
   note.hidden = !t.turn && !(t.limit && edit);
@@ -1255,6 +1362,10 @@ $('tSpeed').onchange = e => {
   editSelected(t => { t.speed = v === '' || !Number.isFinite(n) ? null : Math.max(0, Math.min(99, n)); if (t.speed == null) t.limit = false; });
 };
 $('tLimit').onchange = e => editSelected(t => { t.limit = e.target.checked; });
+$('tThreat').onchange = e => {
+  const n = Math.round(+e.target.value);
+  editSelected(t => { t.threat = Number.isFinite(n) && n >= 1 ? Math.min(99, n) : 1; });
+};
 $('btnTurn').onclick = toggleTurn;
 $('btnClaim').onclick = claimKey;
 $('btnRelease').onclick = claimKey;
@@ -1280,6 +1391,8 @@ $('fileImg').onchange = async e => {
   } catch (err) { alert(err.message || 'Could not read that image'); }
 };
 $('showNames').onchange = e => { ui.showNames = e.target.checked; requestRender(); };
+$('showMarks').onchange = e => { ui.showMarks = e.target.checked; requestRender(); };
+$('exactAim').onchange = e => { ui.exactAim = e.target.checked; requestRender(); };
 $('hardBlocks').onchange = e => { ui.hardBlocks = e.target.checked; requestRender(); };
 $('showGrid').onchange = e => { S.showGrid = e.target.checked; requestRender(); scheduleSave(); };
 $('gridOp').oninput = e => { S.gridOpacity = +e.target.value; requestRender(); scheduleSave(); };
@@ -1311,7 +1424,14 @@ cv.addEventListener('pointerdown', e => {
   if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
   if (e.button === 1 || (e.button === 0 && ui.space)) { startPan(e); return; }
   const h = hexAt(e);
-  if (e.button === 2) { if (h) { ui.ruler = { from: originAt(h), to: originAt(h), startHex: h, toHex: h, active: true }; requestRender(); } return; }
+  if (e.button === 2) {
+    if (!h) return;
+    // pressing on the big token the ruler ends on moves its end, to the exact hex; anywhere else starts a new ruler
+    const R = ui.ruler, end = R && !R.active && R.to.token != null && R.to.token !== R.from.token ? originCells(R.to) : null;
+    if (end && end.length > 1 && end.some(c => hkey(c) === hkey(h))) { R.active = R.held = R.exact = true; R.toHex = h; }
+    else ui.ruler = { from: originAt(h), to: originAt(h), startHex: h, toHex: h, active: true, exact: e.shiftKey !== ui.exactAim };
+    requestRender(); return;
+  }
   if (e.button !== 0) return;
   if (ui.tool === 'move') {
     const t = h && tokenAt(h);
@@ -1340,6 +1460,13 @@ cv.addEventListener('pointermove', e => {
     if (S.zones[k]) bits.push(ZONES[S.zones[k]].label);
     if (S.effects[k]) bits.push(EFFECTS[S.effects[k]].label);
     if (S.floors[k]) bits.push(S.floors[k].map(floorName).join(' + '));
+    const under = tokenAt(h);
+    if (under) {
+      const near = coverAround(under), foes = enemiesAround(under), who = type => foes.filter(x => x.type === type).map(x => x.by.name).join(', ');
+      if (near.length) bits.push(`${under.name} is next to ${near.some(c => c.type === 'hard') ? 'hard' : 'light'} cover, so it may have cover`);
+      if (who('engaged')) bits.push(`Engaged by ${who('engaged')}`);
+      if (who('threat')) bits.push(`Inside the Threat of ${who('threat')}`);
+    }
     $('stHex').textContent = bits.join(' · ');
   } else $('stHex').textContent = 'Hex —';
 
@@ -1350,6 +1477,7 @@ cv.addEventListener('pointermove', e => {
       t.q = q; t.r = r; requestRender();
     }
   }
+  if (ui.ruler && ui.ruler.active) ui.ruler.exact = ui.ruler.held || e.shiftKey !== ui.exactAim;
   if (ui.ruler && ui.ruler.active && h) { ui.ruler.to = originAt(h); ui.ruler.toHex = h; }
   if (ui.area && ui.area.active) ui.area.P = worldAt(e);
   if (ui.ruler && ui.ruler.active || ui.area && ui.area.active || !prev || !h || prev.q !== h.q || prev.r !== h.r) { requestRender(); updateCursor(); }
@@ -1419,6 +1547,11 @@ window.addEventListener('keydown', e => {
   else if (k === 'escape') { if (ui.ruler || ui.area) clearMeasure(); else if (ui.sel != null) { ui.sel = null; commitView(); } }
 });
 window.addEventListener('keyup', e => { if (e.key === ' ') { if (!typing(e)) e.preventDefault(); ui.space = false; updateCursor(); } });
+// Shift swaps how the ruler aims while it's being dragged, without having to move the mouse
+for (const type of ['keydown', 'keyup']) window.addEventListener(type, e => {
+  const R = ui.ruler; if (e.key !== 'Shift' || !R || !R.active) return;
+  R.exact = R.held || e.shiftKey !== ui.exactAim; requestRender();
+});
 
 /* =========================================================================
    FILES, MENU & THE MAP MAKER ROUND TRIP
