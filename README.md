@@ -47,6 +47,8 @@ The battlemap always opens in the **player view**, on the running battle. That m
 
 The pattern is printed in the terminal window when `Battlemap.py` starts. It's kept in `gm_passcode.txt` as the dots in the order you draw them, numbered like a phone keypad (`1 2 3` / `4 5 6` / `7 8 9`). For example, `14789` is down the left side and along the bottom. The file is created with a random 5-dot pattern the first time; edit it to change the pattern. The server never hands that file to the browser. It checks every change against who made it, and hidden tokens are never sent to a screen that isn't in GM mode, so players can't peek at an ambush through the browser's developer tools. After 5 wrong patterns in a row, that device has to wait 30 seconds. The terminal window shows the pattern, so keep it out of sight. Opened straight from disk, without the server, there is no check at all.
 
+The sidebar's sections are dropdowns, here and in the map maker: click a heading to fold it away. Each device remembers which ones it keeps open. All the on/off settings are together under **Options**; the ones for one token are with that token.
+
 ### Turns and movement limits
 
 **Start turn** in the top bar (or `T`) highlights your mech and every ally and deployable you have claimed, with a gold ring, until you press **End turn**. Anything you claim or deploy during your turn joins it. In GM mode and on the table screen, it acts for the selected token and everything played by the same person. Without a server, it acts for the selected token only.

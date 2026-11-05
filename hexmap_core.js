@@ -981,6 +981,25 @@ const store = {
 };
 
 /* =========================================================================
+   SIDEBAR DROPDOWNS
+   ========================================================================= */
+// Each device remembers which dropdowns it has open or closed, for each page
+function initFolds(page) {
+  const key = 'lhm_folds_' + page; let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(key)) || {}; } catch (e) {}
+  document.querySelectorAll('details[data-fold]').forEach(d => {
+    const k = d.dataset.fold; if (k in saved) d.open = !!saved[k];
+    d.addEventListener('toggle', () => { saved[k] = d.open; try { localStorage.setItem(key, JSON.stringify(saved)); } catch (e) {} });
+  });
+}
+// A closed dropdown says on its header which of its tools is in use
+function noteTool(tool) {
+  document.querySelectorAll('.toolnote').forEach(n => { n.textContent = ''; });
+  const b = document.querySelector(`.tool[data-tool="${tool}"]`), note = b && b.closest('details').querySelector('.toolnote');
+  if (note) note.textContent = [...b.childNodes].find(n => n.nodeType === 3 && n.textContent.trim()).textContent.trim();
+}
+
+/* =========================================================================
    MAP FILES
    ========================================================================= */
 function readImageFile(file) {
