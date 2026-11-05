@@ -74,9 +74,7 @@ input[type=checkbox]{accent-color:var(--accent2)}
 .tool.active,.tpl.active,.seg button.active{border-color:var(--accent2);background:#18293a;box-shadow:inset 0 0 0 1px var(--accent2)}
 .sw{width:16px;height:16px;border-radius:3px;border:1px solid rgba(255,255,255,.25);flex:none;
   clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
-.sw.zone{background:repeating-linear-gradient(45deg,rgba(var(--zc),.9) 0 3px,rgba(var(--zc),.3) 3px 6px)}
-.sw.diff{background:repeating-linear-gradient(45deg,rgba(214,160,90,.85) 0 2px,transparent 2px 5px),repeating-linear-gradient(-45deg,rgba(214,160,90,.85) 0 2px,rgba(214,160,90,.2) 2px 5px)}
-.sw.danger{background:rgba(236,84,60,.55);border-color:rgba(236,84,60,.95)}
+.tile{width:20px;height:20px;flex:none;margin:-2px}
 .climbic{width:16px;text-align:center;color:#aab4c0;font-weight:700}
 .sw.erase{background:repeating-linear-gradient(45deg,#ff6b3d 0 3px,transparent 3px 6px)}
 .seg{display:flex;gap:4px;margin-top:8px;align-items:center}
@@ -177,21 +175,21 @@ input[type=checkbox]{accent-color:var(--accent2)}
     <section>
       <h3>Paint</h3>
       <div class="tools">
-        <button class="btn tool" data-tool="light"><span class="sw" style="background:#46b955"></span>Light cover<kbd>1</kbd></button>
-        <button class="btn tool" data-tool="hard"><span class="sw" style="background:#3a3e45"></span>Hard cover<kbd>2</kbd></button>
+        <button class="btn tool" data-tool="light"><canvas class="tile" data-tile="light" width="60" height="60"></canvas>Light cover<kbd>1</kbd></button>
+        <button class="btn tool" data-tool="hard"><canvas class="tile" data-tile="hard" width="60" height="60"></canvas>Hard cover<kbd>2</kbd></button>
         <button class="btn tool" data-tool="erase"><span class="sw erase"></span>Eraser<kbd>3</kbd></button>
         <button class="btn tool" data-tool="pan"><span style="width:16px;text-align:center">✋</span>Pan view<kbd>4</kbd></button>
       </div>
       <div class="tplcat">Zones</div>
       <div class="tools">
-        <button class="btn tool" data-tool="deploy"><span class="sw zone" style="--zc:61,139,255"></span>Deployment zone<kbd>5</kbd></button>
-        <button class="btn tool" data-tool="extract"><span class="sw zone" style="--zc:255,194,61"></span>Extraction zone<kbd>6</kbd></button>
+        <button class="btn tool" data-tool="deploy"><canvas class="tile" data-tile="deploy" width="60" height="60"></canvas>Deployment zone<kbd>5</kbd></button>
+        <button class="btn tool" data-tool="extract"><canvas class="tile" data-tile="extract" width="60" height="60"></canvas>Extraction zone<kbd>6</kbd></button>
       </div>
       <div class="tplcat">Effects</div>
       <div class="tools">
-        <button class="btn tool" data-tool="difficult" title="Costs double movement to enter"><span class="sw diff"></span>Difficult terrain<kbd>7</kbd></button>
+        <button class="btn tool" data-tool="difficult" title="Costs double movement to enter"><canvas class="tile" data-tile="difficult" width="60" height="60"></canvas>Difficult terrain<kbd>7</kbd></button>
         <button class="btn tool" data-tool="climb" title="Click or drag along the border between two hexes. Crossing it costs double movement"><span class="climbic">╪</span>Climb (hex border)<kbd>8</kbd></button>
-        <button class="btn tool" data-tool="dangerous" title="Entering it means an Engineering check or 5 damage; costs no extra movement"><span class="sw danger"></span>Dangerous terrain<kbd>9</kbd></button>
+        <button class="btn tool" data-tool="dangerous" title="Entering it means an Engineering check or 5 damage; costs no extra movement"><canvas class="tile" data-tile="dangerous" width="60" height="60"></canvas>Dangerous terrain<kbd>9</kbd></button>
         <button class="btn tool" data-tool="line" title="Draw a cliff edge or wall: every hex border it runs through becomes a climb"><span class="climbic">⟋</span>Climb line (cliff, wall)<kbd>L</kbd></button>
         <button class="btn tool" data-tool="floor" title="Click inside a shape made of climbs to raise it one floor; right-click to lower it"><span class="climbic">▤</span>Floors (raise a shape)<kbd>G</kbd></button>
       </div>
@@ -326,7 +324,7 @@ function drawMap(ctx, opt) {
     const p = new Path2D();
     brushCells(h, ui.brush).forEach(c => { if (inB(c.q, c.r)) { const x = axToPx(c.q, c.r); hexSub(p, x.x, x.y, HEX); } });
     const Z = ZONES[ui.tool];
-    const col = Z ? `rgba(${Z.col},0.3)` : { light:'rgba(70,185,85,0.3)', hard:'rgba(30,33,38,0.45)', erase:'rgba(255,107,61,0.18)', difficult:'rgba(214,160,90,0.3)', dangerous:'rgba(236,84,60,0.3)' }[ui.tool];
+    const col = ui.tool === 'erase' ? 'rgba(255,107,61,0.18)' : tileLook(ui.tool).fill;
     ctx.fillStyle = col; ctx.fill(p);
     ctx.strokeStyle = Z ? `rgb(${Z.col})` : ui.tool === 'erase' ? '#ff6b3d' : '#4fd1ff'; ctx.lineWidth = opt.lw * 2; ctx.stroke(p);
   }
@@ -843,6 +841,7 @@ function drawPreview(canvas, type) {
   x.save(); T.draw(x, cells, s, { id: 3, rot: 0, type }); x.restore();
 }
 
+document.querySelectorAll('.tile').forEach(c => drawTileSwatch(c, c.dataset.tile));
 document.querySelectorAll('.tool').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 document.querySelectorAll('#brushSeg button').forEach(b => b.onclick = () => setBrush(+b.dataset.b));
 document.querySelectorAll('#shapeSeg button').forEach(b => b.onclick = () => setShape(b.dataset.s));

@@ -13,9 +13,9 @@ Running through the server lets both pages share saved data, which the battlemap
 ## Map Maker
 
 - Start menu: map name, grid size (columns × rows) and an optional background image
-- Paint **light cover** (green) and **hard cover** (dark grey) with a 1, 7 or 19 hex brush
-- Paint **deployment zones** (blue) and **extraction zones** (amber). Zones are a separate layer, so a hex can be cover and part of a zone at the same time
-- Paint **effects**: **difficult terrain** (hatched hexes), **dangerous terrain** (red hazard hexes) and **climbs** (ladder marks on the border between two hexes, e.g. the edge of a ledge or a building's wall)
+- Paint **light cover** (a hollow shield on a faint green) and **hard cover** (a solid shield on dark grey) with a 1, 7 or 19 hex brush. Every tile type is a faint tint with one small symbol, so the tokens stand out. A hex with several things on it shows their symbols side by side
+- Paint **deployment zones** (blue, chevrons pointing in) and **extraction zones** (amber, chevrons pointing out, dashed outline). Zones are a separate layer, so a hex can be cover and part of a zone at the same time
+- Paint **effects**: **difficult terrain** (waves), **dangerous terrain** (a warning triangle) and **climbs** (ladder marks on the border between two hexes, e.g. the edge of a ledge or a building's wall)
 - Draw **climb lines** for cliffs and walls: a straight line, a freehand stroke, a box or a circle. Every hex border the line runs through becomes a climb, so a cliff can follow the background image instead of the hex outline. Each line is one object: right-click it to remove the line and its climbs. A new line snaps onto the end of another one, so lines join up into one unbroken cliff
 - Give shapes **floors**: click inside a shape made of climbs (a closed line, a building, or several lines joined up) to raise it one floor. Leave a gap in the climbs for a ramp: a gap of up to the chosen number of open borders still counts as closed, and it's marked with arrows pointing uphill. To open a gap in a closed shape, remove those climbs with the climb tool
 - **Focus on a floor**: the list at the top left of the map switches floor (or `Page Up` / `Page Down`). The main floor is in focus to start with. Every other floor is tinted in its own colour with a name tag, and tokens on other floors are faded and show their floor
@@ -46,6 +46,12 @@ Running through the server lets both pages share saved data, which the battlemap
 The battlemap always opens in the **player view**, on the running battle. That makes it suitable for a screen on the table that everyone uses. Click **🔒 GM** and draw the GM pattern on the 3×3 grid of dots to unlock everything. Drag through the dots like a phone's lock screen, or tap them in order and press **Unlock** (the keys `1`–`9` work too). **Lock to player view** before handing the screen back.
 
 The pattern is printed in the terminal window when `Battlemap.py` starts. It's kept in `gm_passcode.txt` as the dots in the order you draw them, numbered like a phone keypad (`1 2 3` / `4 5 6` / `7 8 9`). For example, `14789` is down the left side and along the bottom. The file is created with a random 5-dot pattern the first time; edit it to change the pattern. The server never hands that file to the browser. It checks every change against who made it, and hidden tokens are never sent to a screen that isn't in GM mode, so players can't peek at an ambush through the browser's developer tools. After 5 wrong patterns in a row, that device has to wait 30 seconds. The terminal window shows the pattern, so keep it out of sight. Opened straight from disk, without the server, there is no check at all.
+
+### Turns and movement limits
+
+**Start turn** in the top bar (or `T`) highlights your mech and every ally and deployable you have claimed, with a gold ring, until you press **End turn**. Anything you claim or deploy during your turn joins it. In GM mode and on the table screen, it acts for the selected token and everything played by the same person. Without a server, it acts for the selected token only.
+
+To track movement, select a token, type its **Speed** and tick **Limit movement**. During a turn the token shows how far it has moved (`Moved 3/5`). If a move costs more than it has left, you get a warning, but you can still make it, since some effects boost Speed for a turn. The part of the route beyond its Speed is drawn in solid red instead of the normal dots, and the Recent list notes it. Moving only counts during a turn, and starting a turn resets the count.
 
 ### Playing together
 

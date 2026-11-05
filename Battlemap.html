@@ -140,6 +140,11 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
 #ownRow .primary kbd{color:#170d08;border-color:rgba(0,0,0,.35)}
 #ownSel{flex:1;background:#0f1319;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit;font-size:12px}
 #btnWho{max-width:190px;overflow:hidden;text-overflow:ellipsis}
+#speedRow{display:flex;align-items:center;gap:8px;margin-top:8px}
+#speedRow>span{font-size:12px;color:var(--muted)}
+#tSpeed{width:52px;background:#0f1319;color:var(--text);border:1px solid var(--line);border-radius:5px;padding:4px 6px;font:inherit;font-size:13px}
+#speedRow label.chk{margin:0}
+#turnNote.over{color:#ff7a6b}
 #floorBar{position:absolute;left:12px;top:12px;display:flex;flex-direction:column;gap:3px;background:rgba(21,26,33,.9);
   border:1px solid var(--line);border-radius:8px;padding:6px}
 #floorBar button{display:flex;align-items:center;gap:6px;text-align:left}
@@ -201,6 +206,7 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
     <button class="btn" id="btnClearMeasure" title="Esc">Clear measurement</button>
     <button class="btn gm-only" id="btnSaveFile" title="Ctrl+S">Save battle to file</button>
     <button class="btn gm-only" id="btnMenu">Main menu</button>
+    <button class="btn" id="btnTurn" title="T">▶ Start turn</button>
     <button class="btn" id="btnWho" hidden title="Join as a player, or change your name">👤 Join</button>
     <button class="btn" id="btnGm">🔒 GM</button>
   </header>
@@ -211,6 +217,7 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
       <ul class="can">
         <li><b>Drag</b> <span class="dot" style="--c:79,209,255"></span>player and <span class="dot" style="--c:111,209,138"></span>ally tokens to move them. The route and movement cost are shown.</li>
         <li class="net-only"><b>Claim</b> your mech: click it and press <kbd>C</kbd> (or <b>Claim</b>). Only you and the GM can then move it. Allies you deploy are yours straight away.</li>
+        <li><b>Start turn</b> (<kbd>T</kbd>) highlights your tokens until <b>End turn</b>. Set a token's <b>Speed</b> to see when a move goes over it.</li>
         <li><b>Right-drag</b> anywhere to measure range and movement.</li>
         <li><b>Line, Cone, Blast, Burst</b> show what an attack would hit.</li>
         <li><b>Deploy ally</b> for drones, turrets and other deployables.</li>
@@ -240,6 +247,11 @@ body.gm #stage::after{content:"";position:absolute;inset:0;border:3px solid rgba
       <div id="nameRow"><label>Name</label><input id="tName" maxlength="40"></div>
       <div class="seg gm-only" id="tSideSeg"><span>Side</span></div>
       <div class="seg" id="tSizeSeg"><span>Size</span></div>
+      <div id="speedRow">
+        <span>Speed</span><input type="number" id="tSpeed" min="0" max="99" placeholder="–">
+        <label class="chk" title="During a turn, warn when a move costs more than this token has left"><input type="checkbox" id="tLimit"> Limit movement</label>
+      </div>
+      <div class="readonly" id="turnNote" hidden></div>
       <div class="btnrow" id="imgRow">
         <button class="btn small" id="btnArt" title="Pick from the token art folder">Art…</button>
         <button class="btn small" id="btnImg" title="Upload a picture for the round token">Image…</button>
@@ -446,6 +458,9 @@ function tokenAt(h) {   // the floor in focus goes first, so you can pick a toke
   return other;
 }
 const fits = cells => cells.every(c => inB(c.q, c.r));
+// What's left of a token's Speed this turn; null when its movement isn't being limited. Going over is allowed
+// (some effects boost Speed for a turn), it's just marked.
+const movesLeft = t => t && t.turn && t.limit && t.speed != null ? t.speed - t.moved : null;
 
 // An "origin" is a token (follows it if it moves) or a single hex
 function originAt(h) { const t = tokenAt(h); return t ? { token: t.id } : { q: h.q, r: h.r }; }
@@ -565,7 +580,7 @@ function moveRules(t, from, to) {
     const steps = path.slice(1).map((n, i) => ({ ...stepInfo(cellsAt(path[i].q, path[i].r), n.q - path[i].q, n.r - path[i].r, path[i].f), q: n.q, r: n.r }));
     const cost = steps.reduce((a, st) => a + st.cost, 0), last = path[path.length - 1], endSet = new Set(cellsAt(last.q, last.r).map(hkey));
     return {
-      cost, hexes: steps.length, extra: cost - steps.length, path, steps, fp, floor: last.f,
+      cost, hexes: steps.length, extra: cost - steps.length, path, steps, fp, floor: last.f, id: t.id,
       danger: steps.filter(st => st.dangerous).length,
       engagedBy: steps.length ? engagedBy(last.q, last.r, last.f) : null,
       occupied: steps.length ? shown().filter(o => o.id !== t.id && tokenFloor(o) === last.f && tokenCells(o).some(c => endSet.has(hkey(c)))) : [],
@@ -630,6 +645,8 @@ function moveWarnings(m) {
   if (m.occupied.length) w.push(`Can't end a move in ${names(m.occupied)}'s space`);
   if (m.danger) w.push(`Enters dangerous terrain: Engineering check or take 5 damage`);
   if (m.overwatch.length) w.push(`Starts next to ${names(m.overwatch)}: may provoke Overwatch`);
+  const left = movesLeft(tokenById(m.id));
+  if (left != null && m.cost > left) w.push(`Not enough movement: this costs ${m.cost}, ${Math.max(0, left)} left this turn. The extra ${m.cost - Math.max(0, left)} shows in red`);
   return w;
 }
 
@@ -658,14 +675,23 @@ const coverText = c => c.kind === 'hard' ? 'hard cover (+2 Difficulty)' : c.kind
 // Characters next to a hostile are engaged: +1 Difficulty on their ranged attacks
 const engagedWith = t => t && t.id != null ? shown().filter(o => hostileTo(t, o) && tokenFloor(o) === tokenFloor(t) && setDist(tokenCells(t), tokenCells(o)).d === 1) : [];
 
-function drawMovePath(ctx, m, col, marksOnly) {
+// The route, dotted; the part beyond what the token has left this turn is solid red. `left` defaults to what it has now
+function drawMovePath(ctx, m, col, marksOnly, left = m && movesLeft(tokenById(m.id))) {
   if (!m || m.path.length < 2) return;
   const mid = p => centroid(m.fp.map(([a, b]) => cellAt(p.q + a, p.r + b)));
-  if (!marksOnly) {
-    ctx.beginPath(); m.path.forEach((p, i) => { const c = mid(p); i ? ctx.lineTo(c.x, c.y) : ctx.moveTo(c.x, c.y); });
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.setLineDash([HEX*0.06, HEX*0.16]);
+  const trace = pts => { ctx.beginPath(); pts.forEach((p, i) => { const c = mid(p); i ? ctx.lineTo(c.x, c.y) : ctx.moveTo(c.x, c.y); }); };
+  let split = m.path.length - 1;   // the last position still within what's left
+  if (left != null) { let spent = 0; split = m.steps.findIndex(s => (spent += s.cost) > left); if (split < 0) split = m.path.length - 1; }
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (!marksOnly && split > 0) {
+    trace(m.path.slice(0, split + 1)); ctx.setLineDash([HEX*0.06, HEX*0.16]);
     ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = HEX*0.14; ctx.stroke();
     ctx.strokeStyle = col; ctx.lineWidth = HEX*0.08; ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (split < m.path.length - 1) {
+    trace(m.path.slice(split));
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = HEX*0.16; ctx.stroke();
+    ctx.strokeStyle = TURN_RED; ctx.lineWidth = HEX*0.1; ctx.stroke();
   }
   m.steps.forEach(s => { if (s.cost > 1) { const c = mid(s); pill(ctx, c.x, c.y, '+1', HEX*0.28, `rgb(${EFFECTS.difficult.col})`, 'rgba(60,38,12,0.9)'); } });
 }
@@ -779,14 +805,24 @@ function drawToken(ctx, t, lw, hit) {
     circle(ctx, m.x, m.y, R); ctx.strokeStyle = `rgb(${col})`; ctx.lineWidth = Math.max(R*0.12, HEX*0.07); ctx.stroke();
   }
   if (hit) { circle(ctx, m.x, m.y, R + HEX*0.12); ctx.strokeStyle = '#ff6b3d'; ctx.lineWidth = HEX*0.1; ctx.stroke(); }
+  if (t.turn) {   // it's this token's turn: a glowing ring
+    ctx.save(); ctx.shadowColor = TURN_GOLD; ctx.shadowBlur = 18 * view.scale * dprNow();
+    circle(ctx, m.x, m.y, R + HEX*0.09); ctx.strokeStyle = TURN_GOLD; ctx.lineWidth = HEX*0.1; ctx.stroke(); ctx.restore();
+  }
   if (ui.sel === t.id) {
-    circle(ctx, m.x, m.y, R + HEX*(hit ? 0.27 : 0.15)); ctx.setLineDash([HEX*0.18, HEX*0.12]);
+    circle(ctx, m.x, m.y, R + HEX*(hit ? 0.27 : t.turn ? 0.24 : 0.15)); ctx.setLineDash([HEX*0.18, HEX*0.12]);
     ctx.strokeStyle = '#4fd1ff'; ctx.lineWidth = Math.max(lw*2.5, HEX*0.05); ctx.stroke(); ctx.setLineDash([]);
   }
   if (ui.showNames && t.name) pill(ctx, m.x, m.y + R + HEX*0.22, t.name + (t.owner ? ` · ${t.mine ? 'you' : t.owner}` : '') + (elsewhere ? ` · ${floorName(tokenFloor(t))}` : ''), HEX*0.26, `rgba(${col},0.9)`);
   ctx.restore();
   if (t.hidden) pill(ctx, m.x, m.y - R - HEX*0.18, 'HIDDEN', HEX*0.22, '#ff6b3d', 'rgba(40,16,8,0.9)');
+  if (t.turn) {
+    const left = movesLeft(t), over = left != null && left < 0;
+    pill(ctx, m.x, m.y - R - HEX*(t.hidden ? 0.56 : 0.24), left != null ? `Moved ${t.moved}/${t.speed}` : t.moved ? `Moved ${t.moved}` : 'Turn',
+         HEX*0.24, over ? TURN_RED : TURN_GOLD, over ? 'rgba(60,14,10,0.92)' : null);
+  }
 }
+const dprNow = () => window.devicePixelRatio || 1;
 
 function drawArea(ctx, lw, A) {
   if (!A || !A.cells.length && !A.origin) return;
@@ -822,7 +858,9 @@ function drawRuler(ctx, lw, M, labels) {
 function requestRender() { if (!renderQueued) { renderQueued = true; requestAnimationFrame(render); } }
 let renderQueued = false, lastInfo = '', dragMove = null;
 const TRAIL_MS = 5000;   // how long a move's trail takes to fade away
-function addTrail(id, m) { if (m) ui.trails = ui.trails.filter(tr => tr.id !== id).concat({ id, m, at: performance.now() }); }
+const TURN_GOLD = '#ffc94d', TURN_RED = '#ff4b3e';
+// `left` is what the token had left before this move, so its extra stays red after the move is counted
+function addTrail(id, m, left) { if (m) ui.trails = ui.trails.filter(tr => tr.id !== id).concat({ id, m, left, at: performance.now() }); }
 function render() {
   renderQueued = false;
   const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
@@ -854,7 +892,7 @@ function render() {
   ui.trails = ui.trails.filter(tr => {
     const age = (now - tr.at) / TRAIL_MS, t = tokenById(tr.id);
     if (age >= 1 || !t || !seen(t) || (D && D.id === tr.id)) return false;
-    ctx.save(); ctx.globalAlpha = 1 - age; drawMovePath(ctx, tr.m, 'rgba(255,255,255,0.8)'); ctx.restore();
+    ctx.save(); ctx.globalAlpha = 1 - age; drawMovePath(ctx, tr.m, 'rgba(255,255,255,0.8)', false, tr.left); ctx.restore();
     return true;
   });
   if (ui.trails.length) requestRender();
@@ -981,6 +1019,7 @@ function normalizeTokens(list) {
     art: typeof t.art === 'string' && /^[Tt]okens\/[^/]+$/.test(t.art) ? t.art : null,
     // who plays it: their name, whether it's this screen's player, and (for the GM) their id
     owner: typeof t.owner === 'string' ? t.owner : null, mine: !!t.mine, ownerId: typeof t.ownerId === 'string' ? t.ownerId : null,
+    speed: Number.isFinite(t.speed) ? Math.max(0, Math.min(99, Math.round(t.speed))) : null, limit: !!t.limit, turn: !!t.turn, moved: Math.max(0, Math.round(t.moved) || 0),
   }));
 }
 const normalizeLog = list => (Array.isArray(list) ? list : []).filter(e => e && typeof e.text === 'string')
@@ -1026,7 +1065,7 @@ function addToken(side) {
   if (!ui.gm && side !== 'ally') return;
   if (net.role === 'guest') { openJoin(); return; }
   const n = B.tokens.filter(t => t.side === side).length + 1;
-  const t = { id: B.nextId, name: `${SIDES[side].label} ${n}`, side, size: ui.newSize, q: 0, r: 0, rot: 0, floor: focusFloor, img: null, hidden: ui.gm && ui.newHidden };
+  const t = { id: B.nextId, name: `${SIDES[side].label} ${n}`, side, size: ui.newSize, q: 0, r: 0, rot: 0, floor: focusFloor, img: null, hidden: ui.gm && ui.newHidden, speed: null, limit: false, turn: myTurnOn(), moved: 0 };
   const h = freeSpotFor(t); if (!h) { toast('No free space for a token that size'); return; }
   pushUndo(); t.q = h.q; t.r = h.r; t.floor = nearestFloor(h, focusFloor); B.nextId++; B.tokens.push(t); ui.sel = t.id;
   logEvent(ui.gm ? `${t.name} placed${t.hidden ? ' (hidden)' : ''}` : `${t.name} deployed`, t.hidden); commit();
@@ -1048,7 +1087,7 @@ function duplicateSelected() {
   const base = t.name.replace(/\s*\d+$/, '') || 'Token';
   const copy = { ...t, id: B.nextId, name: `${base} ${B.tokens.filter(x => x.name.startsWith(base)).length + 1}` };
   const h = freeSpotFor(copy); if (!h) { toast('No free space for a copy'); return; }
-  pushUndo(); copy.q = h.q; copy.r = h.r; copy.floor = nearestFloor(h, focusFloor); B.nextId++; B.tokens.push(copy); ui.sel = copy.id;
+  pushUndo(); copy.q = h.q; copy.r = h.r; copy.floor = nearestFloor(h, focusFloor); copy.turn = myTurnOn(); copy.moved = 0; B.nextId++; B.tokens.push(copy); ui.sel = copy.id;
   logEvent(`${copy.name} ${ui.gm ? 'placed' : 'deployed'}${copy.hidden ? ' (hidden)' : ''}`, copy.hidden); commit();
 }
 function setHidden(t, hidden) {
@@ -1112,7 +1151,15 @@ function updateSelBox() {
     }
     if (document.activeElement !== sel) sel.value = t.ownerId || '';
   }
-  $('nameRow').hidden = $('imgRow').hidden = !edit;
+  $('nameRow').hidden = $('imgRow').hidden = $('speedRow').hidden = !edit;
+  if (document.activeElement !== $('tSpeed')) $('tSpeed').value = t.speed == null ? '' : t.speed;
+  $('tLimit').checked = !!t.limit; $('tLimit').disabled = t.speed == null;
+  const left = movesLeft(t), note = $('turnNote');
+  note.hidden = !t.turn && !(t.limit && edit);
+  note.className = 'readonly' + (left != null && left < 0 ? ' over' : '');
+  note.textContent = !t.turn ? 'Movement is counted during a turn: press Start turn.'
+    : left == null ? `Moved ${t.moved} this turn.`
+    : left >= 0 ? `Moved ${t.moved} of ${t.speed} this turn, ${left} left.` : `Moved ${t.moved} of ${t.speed} this turn, ${-left} extra.`;
   $('tSizeSeg').hidden = $('btnDup').hidden = $('btnDel').hidden = !rem;
   $('btnRotate').hidden = !edit || (t.size !== 2 && t.size !== 4) || !!t.art;   // art frames only fit one way up
   $('actRow').hidden = $('btnRotate').hidden && !rem;
@@ -1133,7 +1180,7 @@ function updateRoster() {
       const dot = document.createElement('span'); dot.className = 'dot'; dot.style.setProperty('--c', sd.col);
       const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = t.name;
       const sz = document.createElement('span'); sz.className = 'sz';
-      sz.textContent = (t.hidden ? 'hidden · ' : '') + (t.owner ? (t.mine ? 'you' : t.owner) + ' · ' : '') + 'Size ' + sizeLabel(t.size);
+      sz.textContent = (t.turn ? '▶ ' : '') + (t.hidden ? 'hidden · ' : '') + (t.owner ? (t.mine ? 'you' : t.owner) + ' · ' : '') + 'Size ' + sizeLabel(t.size);
       b.append(dot, nm, sz);
       b.onclick = () => { ui.sel = t.id; centerOn(t); commitView(); };
       el.appendChild(b);
@@ -1153,8 +1200,35 @@ function updateLog() {
 }
 function commitView() {   // refresh everything shown; selection changes need nothing saved
   if (ui.sel != null && (!selected() || !seen(selected()))) ui.sel = null;
-  updateRoster(); updateSelBox(); updateLog(); requestRender();
+  updateRoster(); updateSelBox(); updateLog(); updateTurnBtn(); requestRender();
 }
+/* ---- Turns: a person's tokens are highlighted, and their movement counted, from Start turn until End turn ---- */
+// A player's turn is all the tokens they have claimed. The GM and the table screen act for whoever the selected token
+// belongs to; with nothing selected, End turn ends what's running.
+function turnGroup() {
+  if (!ui.gm && net.role === 'player') return B.tokens.filter(t => t.mine);
+  const t = selected();
+  if (!t) return B.tokens.filter(x => x.turn && canMove(x));
+  if (!canMove(t)) return [];
+  return t.owner ? B.tokens.filter(x => x.owner === t.owner && canMove(x)) : [t];
+}
+function updateTurnBtn() {
+  const on = turnGroup().some(t => t.turn), b = $('btnTurn');
+  b.textContent = on ? '■ End turn' : '▶ Start turn'; b.classList.toggle('primary', on);
+}
+function toggleTurn() {
+  const g = turnGroup();
+  if (!g.length) {
+    if (net.role === 'guest') openJoin('Join as a player to take a turn.');
+    else toast(net.role === 'player' && !ui.gm ? 'Claim your mech first: click it and press C' : selected() ? "That token isn't yours to run" : 'Select a token first');
+    return;
+  }
+  const on = g.some(t => t.turn), who = !ui.gm && net.role === 'player' ? net.name : g.map(t => t.name).join(', ');
+  pushUndo(); g.forEach(t => { t.turn = !on; t.moved = 0; });
+  logEvent(`Turn ${on ? 'ended' : 'started'}: ${who}`, g.every(t => t.hidden)); commit();
+}
+// Tokens a player gets during their turn are part of it
+const myTurnOn = () => !ui.gm && net.role === 'player' && B.tokens.some(t => t.mine && t.turn);
 
 document.querySelectorAll('.tool').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 document.querySelectorAll('[data-add]').forEach(b => b.onclick = () => addToken(b.dataset.add));
@@ -1163,6 +1237,12 @@ $('xUp').onclick = () => setX(ui.X + 1);
 $('tName').onfocus = () => pushUndo();
 $('tName').oninput = e => { const t = selected(); if (!t || !canMove(t)) return; t.name = e.target.value; updateRoster(); requestRender(); if (!net.online) scheduleSave(); };
 $('tName').onchange = () => commit();
+$('tSpeed').onchange = e => {
+  const v = e.target.value.trim(), n = Math.round(+v);
+  editSelected(t => { t.speed = v === '' || !Number.isFinite(n) ? null : Math.max(0, Math.min(99, n)); if (t.speed == null) t.limit = false; });
+};
+$('tLimit').onchange = e => editSelected(t => { t.limit = e.target.checked; });
+$('btnTurn').onclick = toggleTurn;
 $('btnClaim').onclick = claimKey;
 $('btnRelease').onclick = claimKey;
 $('ownSel').onchange = e => claimAction('assign', e.target.value || null);
@@ -1267,9 +1347,11 @@ function endPointer() {
     if (D.moved && t) {
       const m = movePath(t, D.from, { q: t.q, r: t.r }), n = m ? m.hexes : hd(D.from, t);
       t.floor = m ? m.floor : nearestFloor(t, focusFloor);
-      logEvent(`${t.name} moved ${n} hex${n === 1 ? '' : 'es'}` + (m && m.extra ? ` (Move ${m.cost})` : '')
+      const left = movesLeft(t), cost = m ? m.cost : n, over = left != null ? cost - Math.max(0, left) : 0;
+      if (t.turn) t.moved += cost;
+      logEvent(`${t.name} moved ${n} hex${n === 1 ? '' : 'es'}` + (m && m.extra ? ` (Move ${m.cost})` : '') + (over > 0 ? `, ${over} over Speed` : '')
         + (m && m.engagedBy ? `, engaged by ${m.engagedBy.name}` : ''), t.hidden || (m && m.engagedBy && m.engagedBy.hidden));
-      addTrail(t.id, m);
+      addTrail(t.id, m, left);
       commit();
     }
   }
@@ -1318,6 +1400,7 @@ window.addEventListener('keydown', e => {
   else if (k === 'f') fitView();
   else if (k === 'h') { const t = selected(); if (t) setHidden(t, !t.hidden); }
   else if (k === 'c') claimKey();
+  else if (k === 't') toggleTurn();
   else if (k === 'pageup') { e.preventDefault(); stepFocus(1); }
   else if (k === 'pagedown') { e.preventDefault(); stepFocus(-1); }
   else if (k === 'escape') { if (ui.ruler || ui.area) clearMeasure(); else if (ui.sel != null) { ui.sel = null; commitView(); } }
@@ -1561,7 +1644,7 @@ async function applyState(st) {
   if (before) for (const t of B.tokens) {
     const was = before.get(t.id) && JSON.parse(before.get(t.id));
     if (was && !active.has(t.id) && (was.q !== t.q || was.r !== t.r) && was.size === t.size && was.rot === t.rot)
-      addTrail(t.id, movePath(t, { q: was.q, r: was.r, floor: was.floor }, t));
+      addTrail(t.id, movePath(t, { q: was.q, r: was.r, floor: was.floor }, t), movesLeft(was));
   }
   if (undoBase) {   // other screens' changes are not part of this screen's undo step
     for (const t of B.tokens) if (!active.has(t.id)) undoBase.set(t.id, net.synced.get(t.id));
@@ -1618,7 +1701,9 @@ async function claimAction(action, player) {
   const r = await api('claim', { id: t.id, action, player }).catch(() => null);
   if (!r) { toast("Can't reach the server"); return; }
   if (!r.ok) toast(r.error || "That isn't allowed");
-  handleState(r.state);
+  await handleState(r.state);
+  const n = r.ok && action === 'claim' ? tokenById(t.id) : null;
+  if (n && myTurnOn() && !n.turn) { pushUndo(); n.turn = true; n.moved = 0; commit(); }
 }
 
 // GM mode's "Player links": the addresses other screens open, ready to copy

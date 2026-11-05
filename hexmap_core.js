@@ -7,20 +7,22 @@
    ========================================================================= */
 const SQRT3 = Math.sqrt(3), TAU = Math.PI * 2, HEX = 50;   // HEX = hex radius in world px
 const DIRS = [[1,0],[0,1],[-1,1],[-1,0],[0,-1],[1,-1]];       // DIRS[i] is the neighbour across edge i
+// Tiles stay out of the way of the tokens: a faint tint and one small muted symbol. `fill` is the tint, `sym` the
+// symbol's colour. Hard cover's tint is dark so it reads as solid on a dark grid and on a bright background image.
 const COVER = {
-  light: { fill:'rgba(70,185,85,0.55)', ring:'rgba(160,255,170,0.35)', label:'Light cover' },
-  hard:  { fill:'rgba(62,66,74,0.92)',  ring:'rgba(185,195,210,0.40)', label:'Hard cover'  },
+  light: { fill:'rgba(115,165,120,0.26)', sym:'165,205,170', label:'Light cover' },
+  hard:  { fill:'rgba(70,74,82,0.45)',   sym:'190,196,206', label:'Hard cover'  },
 };
-// Zones sit on their own layer, so a hex can be both cover and part of a zone
+// Zones sit on their own layer, so a hex can be both cover and part of a zone. They also get a thin outline
 const ZONES = {
-  deploy:  { col:'61,139,255', label:'Deployment zone', up:false, dash:null },
-  extract: { col:'255,194,61', label:'Extraction zone', up:true,  dash:[0.22, 0.14] },
+  deploy:  { col:'120,155,215', fill:'rgba(120,155,215,0.18)', sym:'150,180,230', label:'Deployment zone', dash:null },
+  extract: { col:'210,185,120', fill:'rgba(210,185,120,0.18)', sym:'225,205,150', label:'Extraction zone', dash:[0.22, 0.14] },
 };
 // Effects change what movement costs. Difficult terrain covers hexes (S.effects); a climb sits on
-// the border between two neighbouring hexes (S.edges)
+// the border between two neighbouring hexes (S.edges). `col` is also used to flag extra movement cost
 const EFFECTS = {
-  difficult: { col:'214,160,90', label:'Difficult terrain' },
-  dangerous: { col:'236,84,60',  label:'Dangerous terrain' },
+  difficult: { col:'214,160,90',   fill:'rgba(190,165,125,0.2)', sym:'205,185,150', label:'Difficult terrain' },
+  dangerous: { col:'236,84,60',    fill:'rgba(205,110,90,0.2)',  sym:'225,145,125', label:'Dangerous terrain' },
   climb:     { col:'170,180,192', label:'Climb' },
 };
 
@@ -774,23 +776,8 @@ function drawMapLayers(ctx, lw) {
   ctx.fillStyle = '#1a1f27'; ctx.fillRect(0, 0, W, H);
   if (bgImg) { ctx.globalAlpha = S.bgOpacity; ctx.drawImage(bgImg, 0, 0, W, H); ctx.globalAlpha = 1; }
 
-  // cover fills, batched per type
-  for (const type of ['light', 'hard']) {
-    const fill = new Path2D(), ring = new Path2D(); let any = false;
-    for (const k in S.cells) {
-      if (S.cells[k] !== type) continue;
-      const [c, r] = k.split(',').map(Number), a = offToAx(c, r), p = axToPx(a.q, a.r);
-      hexSub(fill, p.x, p.y, HEX); hexSub(ring, p.x, p.y, HEX*0.78); any = true;
-    }
-    if (!any) continue;
-    ctx.fillStyle = COVER[type].fill; ctx.fill(fill);
-    ctx.strokeStyle = COVER[type].ring; ctx.lineWidth = HEX*0.05; ctx.stroke(ring);
-  }
-
   drawFloorTint(ctx);
-  drawDifficult(ctx);
-  drawDangerous(ctx);
-  drawZones(ctx);
+  drawTiles(ctx);
 
   if (S.showGrid) {
     const g = new Path2D();
@@ -808,46 +795,6 @@ function drawMapLayers(ctx, lw) {
   ctx.strokeStyle = 'rgba(255,107,61,0.5)'; ctx.lineWidth = lw * 1.5; ctx.strokeRect(0, 0, W, H);
 }
 
-function drawDifficult(ctx) {
-  const cells = [], col = EFFECTS.difficult.col;
-  for (const k in S.effects) {
-    if (S.effects[k] !== 'difficult') continue;
-    const [c, r] = k.split(',').map(Number), a = offToAx(c, r), p = axToPx(a.q, a.r);
-    cells.push({ q: a.q, r: a.r, x: p.x, y: p.y });
-  }
-  if (!cells.length) return;
-  const path = new Path2D(); cells.forEach(c => hexSub(path, c.x, c.y, HEX));
-  ctx.fillStyle = `rgba(${col},0.16)`; ctx.fill(path);
-  ctx.save(); ctx.clip(path);   // cross-hatching, so it reads differently from the zones' stripes
-  const b = bbox(cells, HEX), h = b.y1 - b.y0;
-  ctx.beginPath();
-  for (let t = b.x0 - h; t < b.x1; t += HEX*0.4) { ctx.moveTo(t, b.y1); ctx.lineTo(t + h, b.y0); ctx.moveTo(t, b.y0); ctx.lineTo(t + h, b.y1); }
-  ctx.strokeStyle = `rgba(${col},0.38)`; ctx.lineWidth = HEX*0.045; ctx.stroke();
-  ctx.restore();
-  ctx.setLineDash([HEX*0.16, HEX*0.1]); strokeEdges(ctx, outerEdges(cells, HEX), HEX*0.05, `rgba(${col},0.85)`); ctx.setLineDash([]);
-}
-// Dangerous terrain: a red tint with a hazard triangle in every hex
-function drawDangerous(ctx) {
-  const cells = [], col = EFFECTS.dangerous.col;
-  for (const k in S.effects) {
-    if (S.effects[k] !== 'dangerous') continue;
-    const [c, r] = k.split(',').map(Number), a = offToAx(c, r), p = axToPx(a.q, a.r);
-    cells.push({ q: a.q, r: a.r, x: p.x, y: p.y });
-  }
-  if (!cells.length) return;
-  footprintPath(ctx, cells, HEX); ctx.fillStyle = `rgba(${col},0.18)`; ctx.fill();
-  ctx.setLineDash([HEX*0.16, HEX*0.1]); strokeEdges(ctx, outerEdges(cells, HEX), HEX*0.05, `rgba(${col},0.9)`); ctx.setLineDash([]);
-  const tri = new Path2D(), bang = new Path2D(), s = HEX*0.3;
-  cells.forEach(c => {
-    tri.moveTo(c.x, c.y - s); tri.lineTo(c.x + s*0.95, c.y + s*0.65); tri.lineTo(c.x - s*0.95, c.y + s*0.65); tri.closePath();
-    bang.moveTo(c.x, c.y - s*0.45); bang.lineTo(c.x, c.y + s*0.12); bang.moveTo(c.x, c.y + s*0.36); bang.lineTo(c.x, c.y + s*0.38);
-  });
-  ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  ctx.fillStyle = `rgba(${col},0.28)`; ctx.fill(tri);
-  ctx.strokeStyle = `rgba(${col},0.85)`; ctx.lineWidth = HEX*0.05; ctx.stroke(tri);
-  ctx.lineWidth = HEX*0.07; ctx.stroke(bang);
-  ctx.restore();
-}
 // Every floor but the one in focus is tinted in its own colour and gets a name tag; a hex that is also on the floor in
 // focus (a bridge) gets a lighter tint
 function otherFloorCells() {
@@ -924,38 +871,67 @@ function drawClimb(ctx, A, B) {
   ctx.strokeStyle = `rgb(${EFFECTS.climb.col})`; ctx.lineWidth = HEX*0.04; ctx.stroke(rungs); ctx.lineWidth = HEX*0.06; ctx.stroke(rail);
   ctx.restore();
 }
-function zoneIcon(ctx, x, y, s, Z) {
-  ctx.save(); ctx.translate(x, y); if (Z.up) ctx.rotate(Math.PI);
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = s*0.14; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  const chev = () => { ctx.beginPath(); for (const dy of [-0.16, 0.1]) { ctx.moveTo(-s*0.24, (dy - 0.1)*s); ctx.lineTo(0, (dy + 0.1)*s); ctx.lineTo(s*0.24, (dy - 0.1)*s); } };
-  chev(); ctx.stroke();
-  chev(); ctx.strokeStyle = `rgba(${Z.col},0.95)`; ctx.lineWidth = s*0.075; ctx.stroke();
+// The tile types' symbols, on a small dark disc, centred on x,y with radius s: hollow shield for light cover, solid for hard, waves for
+// difficult terrain, a warning triangle for dangerous, and chevrons pointing into a deployment zone and out of an extraction zone
+const shield = (p, x, y, s) => { p.moveTo(x - s*0.8, y - s*0.8); p.lineTo(x + s*0.8, y - s*0.8); p.lineTo(x + s*0.8, y + s*0.1); p.lineTo(x, y + s); p.lineTo(x - s*0.8, y + s*0.1); p.closePath(); };
+const chevrons = (p, x, y, s, dir) => { for (const d of [-0.45, 0.25]) { p.moveTo(x - s*0.8, y + dir*(d - 0.3)*s); p.lineTo(x, y + dir*(d + 0.3)*s); p.lineTo(x + s*0.8, y + dir*(d - 0.3)*s); } };
+const TILE_SYMBOLS = {
+  light: shield,
+  hard: shield,
+  difficult: (p, x, y, s) => { for (const d of [-0.32, 0.32]) { p.moveTo(x - s, y + d*s); p.bezierCurveTo(x - s*0.5, y + (d - 0.55)*s, x - s*0.1, y + (d - 0.55)*s, x, y + d*s); p.bezierCurveTo(x + s*0.1, y + (d + 0.55)*s, x + s*0.5, y + (d + 0.55)*s, x + s, y + d*s); } },
+  dangerous: (p, x, y, s) => {
+    p.moveTo(x, y - s); p.lineTo(x + s, y + s*0.75); p.lineTo(x - s, y + s*0.75); p.closePath();
+    p.moveTo(x, y - s*0.35); p.lineTo(x, y + s*0.15); p.moveTo(x, y + s*0.45); p.lineTo(x, y + s*0.47);
+  },
+  deploy: (p, x, y, s) => chevrons(p, x, y, s, 1),
+  extract: (p, x, y, s) => chevrons(p, x, y, s, -1),
+};
+const tileLook = type => COVER[type] || EFFECTS[type] || ZONES[type];
+function strokeSymbols(ctx, type, path, w) {
+  const look = tileLook(type);
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (type === 'hard') { ctx.fillStyle = `rgba(${look.sym},0.5)`; ctx.fill(path); }
+  ctx.strokeStyle = `rgba(${look.sym},0.85)`; ctx.lineWidth = w; ctx.stroke(path);
   ctx.restore();
 }
-function drawZones(ctx) {
-  for (const type in ZONES) {
-    const Z = ZONES[type], cells = [];
-    for (const k in S.zones) {
-      if (S.zones[k] !== type) continue;
-      const [c, r] = k.split(',').map(Number), a = offToAx(c, r), p = axToPx(a.q, a.r);
-      cells.push({ q: a.q, r: a.r, x: p.x, y: p.y });
-    }
-    if (!cells.length) continue;
-    const path = new Path2D(); cells.forEach(c => hexSub(path, c.x, c.y, HEX));
-    ctx.fillStyle = `rgba(${Z.col},0.2)`; ctx.fill(path);
-    ctx.save(); ctx.clip(path);
-    const b = bbox(cells, HEX), h = b.y1 - b.y0;
-    ctx.beginPath();
-    for (let t = b.x0 - h; t < b.x1; t += HEX*0.45) { ctx.moveTo(t, b.y1); ctx.lineTo(t + h, b.y0); }
-    ctx.strokeStyle = `rgba(${Z.col},0.22)`; ctx.lineWidth = HEX*0.12; ctx.stroke();
-    const e = outerEdges(cells, HEX);
-    strokeEdges(ctx, e, HEX*0.3, `rgba(${Z.col},0.35)`);   // inner glow (clipped to the zone)
-    ctx.restore();
-    if (Z.dash) ctx.setLineDash(Z.dash.map(v => v*HEX));
-    strokeEdges(ctx, e, HEX*0.08, `rgb(${Z.col})`);
-    ctx.setLineDash([]);
-    cells.forEach(c => zoneIcon(ctx, c.x, c.y, HEX, Z));
+// One symbol sits in the middle of the hex; a hex with cover, an effect and a zone has them side by side
+const TILE_SPOTS = { 1: { at:[0], s:0.2 }, 2: { at:[-0.27, 0.27], s:0.19 }, 3: { at:[-0.47, 0, 0.47], s:0.17 } };
+function drawTiles(ctx) {
+  // a template's own art already shows its cover
+  const under = new Set(S.objects.flatMap(o => TEMPLATES[o.type] ? footprint(o.type, o.q, o.r, o.rot).map(c => keyOf(c.q, c.r)) : []));
+  const fills = new Map(), symbols = new Map(), discs = new Path2D(), zones = {}, path = (m, type) => { if (!m.has(type)) m.set(type, new Path2D()); return m.get(type); };
+  for (const k of new Set([...Object.keys(S.cells), ...Object.keys(S.effects), ...Object.keys(S.zones)])) {
+    const [c, r] = k.split(',').map(Number), a = offToAx(c, r), p = axToPx(a.q, a.r);
+    const types = [S.cells[k], S.effects[k], S.zones[k]].filter(type => type && tileLook(type));
+    types.forEach(type => hexSub(path(fills, type), p.x, p.y, HEX));
+    if (S.zones[k] && ZONES[S.zones[k]]) (zones[S.zones[k]] = zones[S.zones[k]] || []).push({ q: a.q, r: a.r, x: p.x, y: p.y });
+    const shown = types.filter(type => !(COVER[type] && under.has(k)));
+    if (!shown.length) continue;
+    const spot = TILE_SPOTS[shown.length];
+    shown.forEach((type, i) => {
+      const x = p.x + spot.at[i]*HEX, s = spot.s*HEX;
+      discs.moveTo(x + s*1.4, p.y); discs.arc(x, p.y, s*1.4, 0, TAU);
+      TILE_SYMBOLS[type](path(symbols, type), x, p.y, s);
+    });
   }
+  for (const [type, p] of fills) { ctx.fillStyle = tileLook(type).fill; ctx.fill(p); }
+  for (const type in zones) {
+    const Z = ZONES[type];
+    if (Z.dash) ctx.setLineDash(Z.dash.map(v => v*HEX));
+    const e = outerEdges(zones[type], HEX);
+    strokeEdges(ctx, e, HEX*0.07, 'rgba(0,0,0,0.25)'); strokeEdges(ctx, e, HEX*0.035, `rgba(${Z.col},0.85)`);
+    ctx.setLineDash([]);
+  }
+  ctx.fillStyle = 'rgba(12,15,20,0.45)'; ctx.fill(discs);   // pale symbols need this on a bright background image
+  for (const [type, p] of symbols) strokeSymbols(ctx, type, p, HEX*0.035);
+}
+// A tile as it looks on the map, for the tool buttons
+function drawTileSwatch(canvas, type) {
+  const x = canvas.getContext('2d'), w = canvas.width, s = w / 2, hexPath = new Path2D(), sym = new Path2D();
+  x.save(); x.translate(s, s); x.scale(s / HEX, s / HEX);
+  hexSub(hexPath, 0, 0, HEX); x.fillStyle = '#232a34'; x.fill(hexPath); x.fillStyle = tileLook(type).fill; x.fill(hexPath);
+  TILE_SYMBOLS[type](sym, 0, 0, HEX*0.62); strokeSymbols(x, type, sym, HEX*0.09);
+  x.restore();
 }
 
 /* =========================================================================
